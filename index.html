@@ -210,7 +210,7 @@
 
       <div class="top-nav-right">
         <!-- Cloud Sync Button -->
-        <button class="btn-cloud-sync" id="btn-top-cloud-sync" title="點擊設定 Google Firebase 跨裝置雲端即時同步">
+        <button class="btn-cloud-sync" id="btn-top-cloud-sync" onclick="openCloudSyncModalDirect()" title="點擊設定 Google Firebase 跨裝置雲端即時同步">
           <span id="cloud-sync-icon">☁️</span>
           <span id="cloud-sync-text">雲端同步</span>
         </button>
@@ -480,14 +480,14 @@
 <!-- =========================================================
      FIREBASE CLOUD SYNC CONFIG MODAL (跨裝置雲端即時同步設定)
      ========================================================= -->
-<div class="modal-overlay" id="modal-cloud-sync">
+<div class="modal-overlay" id="modal-cloud-sync" onclick="if(event.target===this)closeCloudSyncModalDirect()">
   <div class="kpi-report-modal" style="max-width: 580px;">
     <div class="modal-header">
       <h3>
         <span>☁️</span>
         <span>Google Firebase 跨裝置雲端即時同步設定</span>
       </h3>
-      <button class="icon-btn" id="btn-close-cloud-sync">
+      <button class="icon-btn" id="btn-close-cloud-sync" onclick="closeCloudSyncModalDirect()">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
       </button>
     </div>
@@ -524,16 +524,41 @@ const firebaseConfig = {
       </div>
 
       <div style="display: flex; gap: 10px; justify-content: flex-end; align-items: center;">
-        <button type="button" id="btn-disconnect-cloud" style="display:none; padding: 6px 12px; border: 1px solid #ef4444; color: #ef4444; background: transparent; border-radius: 6px; cursor: pointer; font-size: 12px;">
+        <button type="button" id="btn-disconnect-cloud" onclick="if(window.handleDisconnectCloud)window.handleDisconnectCloud();" style="display:none; padding: 6px 12px; border: 1px solid #ef4444; color: #ef4444; background: transparent; border-radius: 6px; cursor: pointer; font-size: 12px;">
           清除設定並中斷
         </button>
-        <button type="button" class="btn-login" id="btn-save-cloud-config" style="padding: 7px 18px; width: auto; font-size: 12.5px;">
+        <button type="button" class="btn-login" id="btn-save-cloud-config" onclick="if(window.handleSaveCloudConfig)window.handleSaveCloudConfig();" style="padding: 7px 18px; width: auto; font-size: 12.5px;">
           <span>💾 儲存並連線同步</span>
         </button>
       </div>
     </div>
   </div>
 </div>
+
+<!-- Direct Fallback Functions for Cloud Modal -->
+<script>
+function openCloudSyncModalDirect() {
+  var modal = document.getElementById('modal-cloud-sync');
+  if (modal) {
+    modal.classList.add('active');
+    modal.style.display = 'flex';
+  }
+  var input = document.getElementById('firebase-config-input');
+  var saved = localStorage.getItem('heptabase_firebase_config');
+  if (input && saved && !input.value.trim()) {
+    input.value = saved;
+  }
+}
+function closeCloudSyncModalDirect() {
+  var modal = document.getElementById('modal-cloud-sync');
+  if (modal) {
+    modal.classList.remove('active');
+    modal.style.display = 'none';
+  }
+}
+window.openCloudSyncModalDirect = openCloudSyncModalDirect;
+window.closeCloudSyncModalDirect = closeCloudSyncModalDirect;
+</script>
 
 <!-- Toast -->
 <div class="toast" id="toast">操作已完成</div>
@@ -542,7 +567,7 @@ const firebaseConfig = {
 <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
 
-<!-- App script -->
-<script src="js/app.js"></script>
+<!-- App script with cache buster -->
+<script src="js/app.js?v=20261108_sync2"></script>
 </body>
 </html>

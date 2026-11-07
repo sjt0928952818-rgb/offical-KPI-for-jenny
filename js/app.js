@@ -513,15 +513,30 @@
 
   function openCloudSyncModal() {
     const savedConfigStr = localStorage.getItem(FIREBASE_CONFIG_KEY);
-    if (savedConfigStr && els.firebaseConfigInput && !els.firebaseConfigInput.value.trim()) {
-      els.firebaseConfigInput.value = savedConfigStr;
+    const input = els.firebaseConfigInput || document.getElementById('firebase-config-input');
+    if (savedConfigStr && input && !input.value.trim()) {
+      input.value = savedConfigStr;
     }
-    els.modalCloudSync.classList.add('active');
+    const modal = els.modalCloudSync || document.getElementById('modal-cloud-sync');
+    if (modal) {
+      modal.classList.add('active');
+      modal.style.display = 'flex';
+    }
   }
 
   function closeCloudSyncModal() {
-    els.modalCloudSync.classList.remove('active');
+    const modal = els.modalCloudSync || document.getElementById('modal-cloud-sync');
+    if (modal) {
+      modal.classList.remove('active');
+      modal.style.display = 'none';
+    }
   }
+
+  // Export to global window so inline onclick always works
+  window.openCloudSyncModal = openCloudSyncModal;
+  window.closeCloudSyncModal = closeCloudSyncModal;
+  window.handleSaveCloudConfig = handleSaveCloudConfig;
+  window.handleDisconnectCloud = handleDisconnectCloud;
 
   function handleSaveCloudConfig() {
     const rawInput = els.firebaseConfigInput.value.trim();
