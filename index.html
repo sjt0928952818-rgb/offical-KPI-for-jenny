@@ -209,6 +209,12 @@
       </div>
 
       <div class="top-nav-right">
+        <!-- Cloud Sync Button -->
+        <button class="btn-cloud-sync" id="btn-top-cloud-sync" title="點擊設定 Google Firebase 跨裝置雲端即時同步">
+          <span id="cloud-sync-icon">☁️</span>
+          <span id="cloud-sync-text">雲端同步</span>
+        </button>
+
         <!-- Manual / Auto Save Status Button -->
         <button class="btn-save-status" id="btn-top-save" title="點擊立即儲存全部日誌與進度 (快捷鍵 Ctrl + S)">
           <span class="save-status-dot" id="save-status-dot"></span>
@@ -471,8 +477,70 @@
   </div>
 </div>
 
+<!-- =========================================================
+     FIREBASE CLOUD SYNC CONFIG MODAL (跨裝置雲端即時同步設定)
+     ========================================================= -->
+<div class="modal-overlay" id="modal-cloud-sync">
+  <div class="kpi-report-modal" style="max-width: 580px;">
+    <div class="modal-header">
+      <h3>
+        <span>☁️</span>
+        <span>Google Firebase 跨裝置雲端即時同步設定</span>
+      </h3>
+      <button class="icon-btn" id="btn-close-cloud-sync">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+      </button>
+    </div>
+    <div class="modal-body" style="padding: 20px 24px;">
+      <div style="font-size: 13px; color: var(--text-secondary); line-height: 1.6; margin-bottom: 16px;">
+        啟用 Google Firebase 後，無論在<b>公司電腦、家裡筆電或手機</b>開啟網頁，所有日誌、肯定感謝與 KPI 進度都會<b>自動即時同步</b>！
+      </div>
+
+      <div class="form-group" style="margin-bottom: 14px;">
+        <label class="form-label" style="font-weight: 700;">目前連線狀態</label>
+        <div id="cloud-status-badge" style="display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 4px; font-size: 12px; font-weight: 600; background: var(--bg-tertiary); color: var(--text-muted);">
+          <span id="cloud-status-badge-dot" style="display:inline-block; width:8px; height:8px; border-radius:50%; background:#94a3b8;"></span>
+          <span id="cloud-status-badge-text">尚未設定雲端連線</span>
+        </div>
+      </div>
+
+      <div class="form-group" style="margin-bottom: 14px;">
+        <label class="form-label" for="firebase-config-input" style="font-weight: 700;">
+          貼上 Firebase 設定代碼 (firebaseConfig)
+        </label>
+        <textarea id="firebase-config-input" class="form-input" style="min-height: 120px; font-family: monospace; font-size: 12px; resize: vertical;" placeholder='可直接貼上整段代碼，例如：
+const firebaseConfig = {
+  apiKey: "...",
+  authDomain: "...",
+  projectId: "...",
+  storageBucket: "...",
+  messagingSenderId: "...",
+  appId: "..."
+};'></textarea>
+      </div>
+
+      <div style="font-size: 11.5px; color: var(--text-muted); line-height: 1.5; background: var(--bg-secondary); padding: 8px 12px; border-radius: 6px; margin-bottom: 14px;">
+        💡 提示：此設定會安全儲存在您的瀏覽器中，只需設定一次，多台電腦皆貼上相同設定即可共享資料。
+      </div>
+
+      <div style="display: flex; gap: 10px; justify-content: flex-end; align-items: center;">
+        <button type="button" id="btn-disconnect-cloud" style="display:none; padding: 6px 12px; border: 1px solid #ef4444; color: #ef4444; background: transparent; border-radius: 6px; cursor: pointer; font-size: 12px;">
+          清除設定並中斷
+        </button>
+        <button type="button" class="btn-login" id="btn-save-cloud-config" style="padding: 7px 18px; width: auto; font-size: 12.5px;">
+          <span>💾 儲存並連線同步</span>
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
 <!-- Toast -->
 <div class="toast" id="toast">操作已完成</div>
+
+<!-- Firebase Compat SDKs (Zero-build CDN) -->
+<script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
 
 <!-- App script -->
 <script src="js/app.js"></script>

@@ -131,6 +131,12 @@
     };
   }
 
+  // --- Firebase Cloud Sync State ---
+  const FIREBASE_CONFIG_KEY = 'heptabase_firebase_config';
+  let firebaseDb = null;
+  let firestoreUnsubscribe = null;
+  let isRemoteUpdate = false;
+
   // --- Local Storage Management ---
   const STORAGE_KEY = 'heptabase_journal_v2_db';
 
@@ -198,8 +204,11 @@
       }
     }
 
-    // 3. Persist to localStorage
+    // 3. Persist to localStorage & trigger cloud sync
     saveData();
+    if (firebaseDb && !isRemoteUpdate) {
+      syncDataToCloud(true);
+    }
 
     // 4. Update status indicator
     setTimeout(() => {
@@ -219,6 +228,7 @@
       renderKpiTree();
       renderDateStrip();
       updateDayFooterMetrics();
+      syncDataToCloud();
     } catch (e) {
       console.error('Failed to save data:', e);
     }
@@ -288,6 +298,266 @@
     saveData();
   }
 
+  // =========================================================
+  // FIREBASE CLOUD SYNC LOGIC (Google Firebase 跨裝置雲端即時同步)
+  // =========================================================
+
+  function parseFirebaseConfig(raw) {
+    if (!raw || typeof raw !== 'string') return null;
+    const trimmed = raw.trim();
+
+    // 1. Try pure JSON parse directly
+    try {
+      const p = JSON.parse(trimmed);
+      if (p && p.apiKey && p.projectId) return p;
+    } catch (e) {}
+
+    // 2. Extract innermost / outermost object literal {...}
+    const match = trimmed.match(/\{[\s\S]*\}/);
+    if (!match) return null;
+    const objStr = match[0];
+
+    try {
+      const p = JSON.parse(objStr);
+      if (p && p.apiKey && p.projectId) return p;
+    } catch (e) {}
+
+    // 3. Evaluate JS object notation safely (supports const firebaseConfig = { apiKey: '...' })
+    try {
+      const fn = new Function('return (' + objStr + ');');
+      const res = fn();
+      if (res && typeof res === 'object' && res.apiKey && res.projectId) {
+        return res;
+      }
+    } catch (err) {
+      console.error('[Firebase] Failed to parse firebaseConfig expression:', err);
+    }
+    return null;
+  }
+
+  function initFirebaseCloudSync() {
+    const savedConfigStr = localStorage.getItem(FIREBASE_CONFIG_KEY);
+    if (!savedConfigStr) {
+      updateCloudSyncUI(false);
+      return;
+    }
+
+    const config = parseFirebaseConfig(savedConfigStr);
+    if (!config || !config.apiKey || !config.projectId) {
+      updateCloudSyncUI(false, '設定代碼格式不完整');
+      return;
+    }
+
+    if (!window.firebase) {
+      console.warn('[Firebase] Firebase SDK 尚未就緒，1秒後自動重試');
+      setTimeout(initFirebaseCloudSync, 1000);
+      return;
+    }
+
+    try {
+      let app;
+      if (firebase.apps && firebase.apps.length > 0) {
+        app = firebase.apps[0];
+      } else {
+        app = firebase.initializeApp(config);
+      }
+      firebaseDb = firebase.firestore();
+      updateCloudSyncUI(true);
+      setupFirestoreListener();
+    } catch (err) {
+      console.error('[Firebase] 初始化連線失敗:', err);
+      updateCloudSyncUI(false, err.message);
+    }
+  }
+
+  function setupFirestoreListener() {
+    if (!firebaseDb) return;
+    if (firestoreUnsubscribe) {
+      firestoreUnsubscribe();
+      firestoreUnsubscribe = null;
+    }
+
+    const docRef = firebaseDb.collection('heptabase_users').doc(AUTH_CONFIG.account);
+
+    firestoreUnsubscribe = docRef.onSnapshot((docSnap) => {
+      if (!docSnap.exists) {
+        console.log('[Firebase] 雲端尚未建立日誌紀錄，初次自動上傳本地資料...');
+        syncDataToCloud(true);
+        return;
+      }
+
+      if (docSnap.metadata && docSnap.metadata.hasPendingWrites) {
+        return;
+      }
+
+      const remoteData = docSnap.data();
+      if (!remoteData) return;
+
+      let remoteJournal = null;
+      let remoteKpi = null;
+
+      if (remoteData.journalDataJson) {
+        try { remoteJournal = JSON.parse(remoteData.journalDataJson); } catch (e) {}
+      } else if (remoteData.journalData) {
+        remoteJournal = remoteData.journalData;
+      }
+
+      if (remoteData.kpiYearsJson) {
+        try { remoteKpi = JSON.parse(remoteData.kpiYearsJson); } catch (e) {}
+      } else if (remoteData.kpiYears) {
+        remoteKpi = remoteData.kpiYears;
+      }
+
+      if (!remoteJournal) return;
+
+      const curJournalStr = JSON.stringify(state.journalData);
+      const newJournalStr = JSON.stringify(remoteJournal);
+      const curKpiStr = JSON.stringify(state.kpiYears);
+      const newKpiStr = JSON.stringify(remoteKpi || []);
+
+      if (curJournalStr === newJournalStr && curKpiStr === newKpiStr) {
+        return;
+      }
+
+      console.log('[Firebase] 收到雲端即時同步資料，更新本地畫面...');
+      isRemoteUpdate = true;
+      try {
+        state.journalData = remoteJournal;
+        if (remoteKpi && Array.isArray(remoteKpi) && remoteKpi.length > 0) {
+          state.kpiYears = remoteKpi;
+        }
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(state.journalData));
+        localStorage.setItem('heptabase_kpi_years', JSON.stringify(state.kpiYears));
+
+        renderCalendar();
+        renderRecentList();
+        renderKpiTree();
+        renderDateStrip();
+        renderJournalDay();
+        updateSaveIndicator(true);
+        showToast('☁️ 雲端已即時同步最新資料');
+      } finally {
+        isRemoteUpdate = false;
+      }
+    }, (error) => {
+      console.error('[Firebase] Firestore onSnapshot 監聽中斷:', error);
+      updateCloudSyncUI(false, error.message);
+    });
+  }
+
+  const debouncedCloudSync = debounce(() => {
+    doSyncDataToCloud();
+  }, 1000);
+
+  function syncDataToCloud(forceImmediate = false) {
+    if (!firebaseDb || isRemoteUpdate) return;
+    if (forceImmediate) {
+      doSyncDataToCloud();
+    } else {
+      debouncedCloudSync();
+    }
+  }
+
+  async function doSyncDataToCloud() {
+    if (!firebaseDb || isRemoteUpdate) return;
+    try {
+      const docRef = firebaseDb.collection('heptabase_users').doc(AUTH_CONFIG.account);
+      await docRef.set({
+        journalDataJson: JSON.stringify(state.journalData),
+        kpiYearsJson: JSON.stringify(state.kpiYears),
+        updatedAt: firebase.firestore.FieldValue.serverTimestamp(),
+        updatedAtIso: new Date().toISOString(),
+        userAccount: AUTH_CONFIG.account
+      }, { merge: true });
+      updateCloudSyncUI(true);
+    } catch (err) {
+      console.error('[Firebase] 雲端寫入失敗:', err);
+      updateCloudSyncUI(false, err.message);
+    }
+  }
+
+  function updateCloudSyncUI(isConnected, errorMsg) {
+    if (els.btnTopCloudSync) {
+      if (isConnected) {
+        els.btnTopCloudSync.classList.add('connected');
+        if (els.cloudSyncIcon) els.cloudSyncIcon.textContent = '🟢';
+        if (els.cloudSyncText) els.cloudSyncText.textContent = '雲端已同步';
+        els.btnTopCloudSync.title = 'Google Firebase 雲端連線正常，跨裝置日誌即時自動同步';
+      } else {
+        els.btnTopCloudSync.classList.remove('connected');
+        if (els.cloudSyncIcon) els.cloudSyncIcon.textContent = '☁️';
+        if (els.cloudSyncText) els.cloudSyncText.textContent = errorMsg ? '連線異常' : '雲端同步';
+        els.btnTopCloudSync.title = errorMsg ? `雲端連線錯誤：${errorMsg}` : '點擊設定 Google Firebase 跨裝置雲端同步';
+      }
+    }
+
+    if (els.cloudStatusBadge && els.cloudStatusBadgeDot && els.cloudStatusBadgeText) {
+      if (isConnected) {
+        els.cloudStatusBadge.style.background = 'rgba(16, 185, 129, 0.12)';
+        els.cloudStatusBadge.style.color = '#10b981';
+        els.cloudStatusBadgeDot.style.background = '#10b981';
+        els.cloudStatusBadgeText.textContent = '✅ 已成功連線至 Firestore，全自動即時同步中';
+        if (els.btnDisconnectCloud) els.btnDisconnectCloud.style.display = 'inline-block';
+      } else {
+        els.cloudStatusBadge.style.background = 'var(--bg-tertiary)';
+        els.cloudStatusBadge.style.color = errorMsg ? '#ef4444' : 'var(--text-muted)';
+        els.cloudStatusBadgeDot.style.background = errorMsg ? '#ef4444' : '#94a3b8';
+        els.cloudStatusBadgeText.textContent = errorMsg ? `⚠️ 連線錯誤：${errorMsg}` : '尚未設定雲端連線';
+        if (els.btnDisconnectCloud) {
+          const hasSaved = !!localStorage.getItem(FIREBASE_CONFIG_KEY);
+          els.btnDisconnectCloud.style.display = hasSaved ? 'inline-block' : 'none';
+        }
+      }
+    }
+  }
+
+  function openCloudSyncModal() {
+    const savedConfigStr = localStorage.getItem(FIREBASE_CONFIG_KEY);
+    if (savedConfigStr && els.firebaseConfigInput && !els.firebaseConfigInput.value.trim()) {
+      els.firebaseConfigInput.value = savedConfigStr;
+    }
+    els.modalCloudSync.classList.add('active');
+  }
+
+  function closeCloudSyncModal() {
+    els.modalCloudSync.classList.remove('active');
+  }
+
+  function handleSaveCloudConfig() {
+    const rawInput = els.firebaseConfigInput.value.trim();
+    if (!rawInput) {
+      alert('請輸入或貼上 Firebase 設定代碼 (firebaseConfig)！');
+      return;
+    }
+
+    const parsed = parseFirebaseConfig(rawInput);
+    if (!parsed || !parsed.apiKey || !parsed.projectId) {
+      alert('設定代碼格式無法識別，請確認已完整複製包含 apiKey 與 projectId 的代碼區塊！');
+      return;
+    }
+
+    localStorage.setItem(FIREBASE_CONFIG_KEY, JSON.stringify(parsed, null, 2));
+    showToast('已儲存 Firebase 設定，正在連線...');
+    initFirebaseCloudSync();
+    closeCloudSyncModal();
+  }
+
+  function handleDisconnectCloud() {
+    if (!confirm('確定要清除此電腦上的 Firebase 雲端連線設定嗎？\n（本地已儲存的日誌資料仍會保留在電腦中）')) {
+      return;
+    }
+    if (firestoreUnsubscribe) {
+      firestoreUnsubscribe();
+      firestoreUnsubscribe = null;
+    }
+    firebaseDb = null;
+    localStorage.removeItem(FIREBASE_CONFIG_KEY);
+    if (els.firebaseConfigInput) els.firebaseConfigInput.value = '';
+    updateCloudSyncUI(false);
+    showToast('已中斷雲端連線');
+    closeCloudSyncModal();
+  }
+
   // --- Elements ---
   const els = {
     // Login Screen
@@ -347,7 +617,20 @@
     btnImportBackup: document.getElementById('btn-import-backup'),
     fileInput: document.getElementById('file-input'),
     spaceNameDisplay: document.getElementById('space-name-display'),
-    toast: document.getElementById('toast')
+    toast: document.getElementById('toast'),
+
+    // Cloud Sync Elements
+    btnTopCloudSync: document.getElementById('btn-top-cloud-sync'),
+    cloudSyncIcon: document.getElementById('cloud-sync-icon'),
+    cloudSyncText: document.getElementById('cloud-sync-text'),
+    modalCloudSync: document.getElementById('modal-cloud-sync'),
+    btnCloseCloudSync: document.getElementById('btn-close-cloud-sync'),
+    cloudStatusBadge: document.getElementById('cloud-status-badge'),
+    cloudStatusBadgeDot: document.getElementById('cloud-status-badge-dot'),
+    cloudStatusBadgeText: document.getElementById('cloud-status-badge-text'),
+    firebaseConfigInput: document.getElementById('firebase-config-input'),
+    btnDisconnectCloud: document.getElementById('btn-disconnect-cloud'),
+    btnSaveCloudConfig: document.getElementById('btn-save-cloud-config')
   };
 
   // =========================================================
@@ -615,11 +898,12 @@
         html += `
           <div class="kpi-month-item ${mg.completed ? 'completed' : ''}" data-mg-id="${mg.id}">
             <input type="checkbox" class="kpi-month-check" ${mg.completed ? 'checked' : ''} title="標記完成">
-            <div class="kpi-month-content">
+            <div class="kpi-month-content" title="點擊修改此月目標內容或月份" data-kpi-idx="${kpiIdx}" data-mg-idx="${mgIdx}">
               <span class="kpi-month-badge">${monthLabel}</span>
               <span class="kpi-month-text">${escapeHtml(mg.title)} ${isRolled}</span>
             </div>
             <div class="kpi-month-actions">
+              <button class="project-tab-action-btn btn-edit-month" title="修改月目標內容與月份" data-kpi-idx="${kpiIdx}" data-mg-idx="${mgIdx}">✏️</button>
               ${!mg.completed ? `<button class="btn-rollover-month" title="未完成：一鍵展延至下月繼續完成" data-kpi-idx="${kpiIdx}" data-mg-idx="${mgIdx}">↪ 展延</button>` : ''}
               <button class="project-tab-action-btn btn-del-month" title="刪除此月目標" data-kpi-idx="${kpiIdx}" data-mg-idx="${mgIdx}">✕</button>
             </div>
@@ -639,6 +923,49 @@
   }
 
   function setupKpiTreeListeners() {
+    function handleEditMonthGoal(kpiIdx, mgIdx) {
+      const kpi = state.kpiYears[kpiIdx];
+      if (!kpi || !kpi.monthlyGoals || !kpi.monthlyGoals[mgIdx]) return;
+      const mg = kpi.monthlyGoals[mgIdx];
+
+      const newTitle = prompt(`【${kpi.title}】\n請修改月誌工作目標名稱：`, mg.title);
+      if (newTitle === null) return;
+      if (newTitle.trim()) {
+        mg.title = newTitle.trim();
+      }
+
+      const defaultMonth = mg.month ? mg.month.replace('2026-', '') : '11';
+      const newMonthInput = prompt(`請設定【${mg.title}】執行的月份（例如 10、11 或 2026-10）：`, defaultMonth);
+      if (newMonthInput !== null && newMonthInput.trim()) {
+        const raw = newMonthInput.trim().replace('月', '');
+        const cleanMonth = raw.includes('-') ? raw : `2026-${String(raw).padStart(2, '0')}`;
+        mg.month = cleanMonth;
+      }
+
+      saveAllCurrentData(false);
+      renderKpiTree();
+      renderJournalDay();
+      showToast(`已成功修改月目標：${mg.title}`);
+    }
+
+    document.querySelectorAll('.btn-edit-month').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const kpiIdx = parseInt(btn.getAttribute('data-kpi-idx'), 10);
+        const mgIdx = parseInt(btn.getAttribute('data-mg-idx'), 10);
+        handleEditMonthGoal(kpiIdx, mgIdx);
+      });
+    });
+
+    document.querySelectorAll('.kpi-month-content').forEach(box => {
+      box.addEventListener('click', (e) => {
+        e.stopPropagation();
+        const kpiIdx = parseInt(box.getAttribute('data-kpi-idx'), 10);
+        const mgIdx = parseInt(box.getAttribute('data-mg-idx'), 10);
+        handleEditMonthGoal(kpiIdx, mgIdx);
+      });
+    });
+
     document.querySelectorAll('.kpi-year-title-box').forEach(box => {
       box.addEventListener('click', () => {
         const card = box.closest('.kpi-year-card');
@@ -2122,6 +2449,15 @@
       }
     });
 
+    // Firebase Cloud Sync Events
+    els.btnTopCloudSync?.addEventListener('click', openCloudSyncModal);
+    els.btnCloseCloudSync?.addEventListener('click', closeCloudSyncModal);
+    els.btnSaveCloudConfig?.addEventListener('click', handleSaveCloudConfig);
+    els.btnDisconnectCloud?.addEventListener('click', handleDisconnectCloud);
+    els.modalCloudSync?.addEventListener('click', (e) => {
+      if (e.target === els.modalCloudSync) closeCloudSyncModal();
+    });
+
     setupSearch();
     setupMenuActions();
   }
@@ -2138,6 +2474,7 @@
     renderJournalDay();
     initEvents();
     updateSaveIndicator(true);
+    initFirebaseCloudSync();
   }
 
   if (document.readyState === 'loading') {
