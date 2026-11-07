@@ -148,6 +148,68 @@
     }
   }
 
+  function updateSaveIndicator(isSuccess) {
+    const dot = document.getElementById('save-status-dot');
+    const text = document.getElementById('save-status-text');
+    const now = new Date();
+    const timeStr = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}:${String(now.getSeconds()).padStart(2, '0')}`;
+
+    if (dot) {
+      dot.classList.remove('saving');
+      dot.style.background = isSuccess ? '#10b981' : '#f59e0b';
+    }
+    if (text) {
+      text.textContent = isSuccess ? `已儲存 ${timeStr}` : '儲存中...';
+    }
+  }
+
+  function setSavingState() {
+    const dot = document.getElementById('save-status-dot');
+    const text = document.getElementById('save-status-text');
+    if (dot) dot.classList.add('saving');
+    if (text) text.textContent = '儲存中...';
+  }
+
+  function saveAllCurrentData(showToastFeedback = true) {
+    setSavingState();
+
+    const dateKey = state.selectedDate;
+    const dayData = state.journalData[dateKey];
+    if (dayData) {
+      // 1. Gather all reflection textarea values from live DOM
+      if (!dayData.reflection) dayData.reflection = { affirmation: '', gratitude: '', learning: '' };
+      document.querySelectorAll('.reflection-input').forEach(textarea => {
+        const field = textarea.getAttribute('data-field');
+        if (field) {
+          dayData.reflection[field] = textarea.value;
+        }
+      });
+
+      // 2. Gather all block contents from live DOM to ensure 100% fidelity
+      if (dayData.blocks) {
+        document.querySelectorAll('.editor-block-row').forEach(row => {
+          const id = row.getAttribute('data-id');
+          const block = dayData.blocks.find(b => b.id === id);
+          const contentEl = row.querySelector('.block-content');
+          if (block && contentEl) {
+            block.content = contentEl.innerText;
+          }
+        });
+      }
+    }
+
+    // 3. Persist to localStorage
+    saveData();
+
+    // 4. Update status indicator
+    setTimeout(() => {
+      updateSaveIndicator(true);
+      if (showToastFeedback) {
+        showToast('💾 所有日誌、覆盤與 KPI 已成功儲存！');
+      }
+    }, 120);
+  }
+
   function saveData() {
     try {
       localStorage.setItem(STORAGE_KEY, JSON.stringify(state.journalData));
@@ -257,6 +319,7 @@
     navTomorrow: document.getElementById('nav-tomorrow'),
 
     // Top Bar
+    btnTopSave: document.getElementById('btn-top-save'),
     dateStrip: document.getElementById('date-strip'),
     dateStripPrev: document.getElementById('date-strip-prev'),
     dateStripNext: document.getElementById('date-strip-next'),
@@ -292,16 +355,15 @@
   // =========================================================
   function initAuth() {
     const isRemembered = localStorage.getItem('heptabase_remember') === 'true';
-    const savedAcc = localStorage.getItem('heptabase_saved_acc') || '';
+    const savedAcc = localStorage.getItem('heptabase_saved_acc') || AUTH_CONFIG.account;
     const savedPwd = localStorage.getItem('heptabase_saved_pwd') || '';
     const isLoggedInLocal = localStorage.getItem('heptabase_logged_in') === 'true';
     const isLoggedInSession = sessionStorage.getItem('heptabase_logged_in') === 'true';
 
-    if (isRemembered && savedAcc) {
-      els.loginAccount.value = savedAcc;
-      els.loginPassword.value = savedPwd;
-      els.loginRemember.checked = true;
-    }
+    // Prefill account by default
+    els.loginAccount.value = savedAcc;
+    if (savedPwd) els.loginPassword.value = savedPwd;
+    els.loginRemember.checked = isRemembered || true;
 
     // Auto-login if remembered and was previously logged in
     if ((isRemembered && isLoggedInLocal) || isLoggedInSession) {
@@ -309,38 +371,76 @@
     } else {
       els.loginOverlay.classList.remove('hidden');
       setTimeout(() => {
-        if (!els.loginAccount.value) els.loginAccount.focus();
-        else els.loginPassword.focus();
+        if (!els.loginPassword.value) els.loginPassword.focus();
+        else els.loginAccount.focus();
       }, 100);
     }
 
+    // Toggle password visibility (顯示 / 隱藏密碼)
+    const btnTogglePwd = document.getElementById('btn-toggle-pwd');
+    if (btnTogglePwd) {
+      btnTogglePwd.addEventListener('click', () => {
+        const type = els.loginPassword.getAttribute('type') === 'password' ? 'text' : 'password';
+        els.loginPassword.setAttribute('type', type);
+        btnTogglePwd.textContent = type === 'password' ? '👁️' : '🙈';
+      });
+    }
+
     // Submit handler
-    els.btnDoLogin.addEventListener('click', handleLogin);
-    els.loginPassword.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter') handleLogin();
+    if (els.loginForm) {
+      els.loginForm.addEventListener('submit', (e) => {
+        e.preventDefault();
+        handleLogin();
+      });
+    }
+
+    els.btnDoLogin.addEventListener('click', (e) => {
+      e.preventDefault();
+      handleLogin();
     });
+
+    els.loginPassword.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        handleLogin();
+      }
+    });
+
     els.loginAccount.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter') handleLogin();
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        handleLogin();
+      }
     });
 
     // Logout handler
     els.btnLogout.addEventListener('click', handleLogout);
+
+    window.handleLogin = handleLogin;
+    window.handleLogout = handleLogout;
   }
 
   function handleLogin() {
-    const acc = els.loginAccount.value.trim();
-    const pwd = els.loginPassword.value.trim();
+    const rawAcc = els.loginAccount.value || '';
+    const rawPwd = els.loginPassword.value || '';
+
+    // Remove zero-width whitespace and trim
+    const acc = rawAcc.replace(/[\u200B-\u200D\uFEFF]/g, '').trim();
+    const pwd = rawPwd.replace(/[\u200B-\u200D\uFEFF]/g, '').trim();
     const remember = els.loginRemember.checked;
 
-    if (acc === AUTH_CONFIG.account && pwd === AUTH_CONFIG.password) {
+    const isAccMatch = acc.toLowerCase() === AUTH_CONFIG.account.toLowerCase();
+    const isPwdMatch = pwd === AUTH_CONFIG.password;
+
+    if (isAccMatch && isPwdMatch) {
       // Login Success
       els.loginErrorMsg.classList.remove('active');
 
       if (remember) {
         localStorage.setItem('heptabase_logged_in', 'true');
         localStorage.setItem('heptabase_remember', 'true');
-        localStorage.setItem('heptabase_saved_acc', acc);
-        localStorage.setItem('heptabase_saved_pwd', pwd);
+        localStorage.setItem('heptabase_saved_acc', AUTH_CONFIG.account);
+        localStorage.setItem('heptabase_saved_pwd', AUTH_CONFIG.password);
       } else {
         sessionStorage.setItem('heptabase_logged_in', 'true');
         localStorage.removeItem('heptabase_logged_in');
@@ -352,20 +452,27 @@
       els.loginOverlay.classList.add('hidden');
       showToast('登入成功，歡迎回來！');
     } else {
-      // Login Failed
+      // Login Failed - show precise guidance
       els.loginErrorMsg.classList.add('active');
-      els.loginErrorText.textContent = '帳號或密碼錯誤，請重新輸入';
-      els.loginPassword.focus();
-      els.loginPassword.select();
+      if (!isAccMatch) {
+        els.loginErrorText.textContent = '帳號錯誤，預設帳號為 danner03060302';
+        els.loginAccount.focus();
+        els.loginAccount.select();
+      } else {
+        els.loginErrorText.textContent = '密碼錯誤，請點選👁️確認是否輸入為 a230060';
+        els.loginPassword.focus();
+        els.loginPassword.select();
+      }
     }
   }
 
   function handleLogout() {
     if (confirm('確定要登出系統嗎？')) {
+      saveAllCurrentData(false);
       sessionStorage.removeItem('heptabase_logged_in');
       localStorage.removeItem('heptabase_logged_in');
       els.loginOverlay.classList.remove('hidden');
-      showToast('已安全登出');
+      showToast('已安全儲存並登出');
     }
   }
 
@@ -707,8 +814,16 @@
     renderJournalDay();
   }
 
+  // Auto-resize reflection textarea based on typed content
+  function autoResizeReflectionInput(textarea) {
+    if (!textarea) return;
+    textarea.style.height = 'auto';
+    const scrollH = textarea.scrollHeight;
+    textarea.style.height = Math.max(72, scrollH) + 'px';
+  }
+
   // =========================================================
-  // RENDER DAY CONTENT + 每日三個固定欄位 (肯定、感謝、學習/反省)
+  // RENDER DAY CONTENT + 每日三個核心欄位 (肯定、感謝、學習/反省)
   // =========================================================
   function renderJournalDay() {
     closeMenu();
@@ -733,16 +848,26 @@
       <div class="day-section" id="day-section-${dateKey}">
         <div class="day-header">
           <h1 class="day-title">${dayNum}日</h1>
-          <button class="ai-badge-btn" id="btn-day-kpi-filter" style="font-size:11.5px; padding:3px 8px;" title="點擊檢視今日與年度KPI的關聯">
-            <span>🎯 檢視今日 KPI 關聯</span>
-          </button>
+          <div style="display:flex; align-items:center; gap:8px;">
+            <button class="btn-day-save" id="btn-day-save" title="點擊手動儲存當前日誌與所有進度 (快捷鍵 Ctrl + S)">
+              <span>💾 儲存日誌</span>
+            </button>
+            <button class="ai-badge-btn" id="btn-day-kpi-filter" style="font-size:11.5px; padding:3px 8px;" title="點擊檢視今日與年度KPI的關聯">
+              <span>🎯 檢視今日 KPI 關聯</span>
+            </button>
+          </div>
         </div>
 
-        <!-- 每日固定三個核心欄位：肯定、感謝、學習(反省) -->
-        <div class="daily-reflection-container">
+        <!-- Freeform Blocks Editor (每日工作事項) -->
+        <div class="day-editor" id="day-editor">
+          <!-- Blocks rendered here -->
+        </div>
+
+        <!-- 每日固定三個核心欄位：肯定、感謝、學習(反省) - 移至新增標籤上方，隨字數自動撐開 -->
+        <div class="daily-reflection-container" id="daily-reflection-container">
           <div class="daily-reflection-header">
-            <span>🌱 每日覆盤與心態沉澱 (Daily Reflection)</span>
-            <span style="font-size: 11px; font-weight: normal; color: var(--text-muted);">自動儲存</span>
+            <span>🌱 每日覆盤與心靈沉澱 (Daily Reflection)</span>
+            <span style="font-size: 11px; font-weight: normal; color: var(--text-muted);">自動儲存 • 隨字數自動調整大小</span>
           </div>
           <div class="daily-reflection-grid">
             <!-- 1. 肯定 -->
@@ -774,11 +899,7 @@
           </div>
         </div>
 
-        <!-- Freeform Blocks Editor -->
-        <div class="day-editor" id="day-editor">
-          <!-- Blocks rendered here -->
-        </div>
-
+        <!-- 底部功能列：新增標籤與字數統計 -->
         <div class="day-footer">
           <div class="day-footer-left">
             <button class="btn-add-tag" id="btn-add-tag">+ 新增標籤...</button>
@@ -792,12 +913,30 @@
       </div>
     `;
 
+    document.getElementById('btn-day-save')?.addEventListener('click', () => {
+      saveAllCurrentData(true);
+    });
+
+    const saveReflectionDebounced = debounce(() => {
+      saveData();
+      updateSaveIndicator(true);
+    }, 400);
+
     document.querySelectorAll('.reflection-input').forEach(textarea => {
-      textarea.addEventListener('input', debounce((e) => {
+      autoResizeReflectionInput(textarea);
+      textarea.addEventListener('input', (e) => {
+        autoResizeReflectionInput(e.target);
+        const field = e.target.getAttribute('data-field');
+        dayData.reflection[field] = e.target.value;
+        setSavingState();
+        saveReflectionDebounced();
+      });
+      textarea.addEventListener('blur', (e) => {
         const field = e.target.getAttribute('data-field');
         dayData.reflection[field] = e.target.value;
         saveData();
-      }, 300));
+        updateSaveIndicator(true);
+      });
     });
 
     const editorEl = document.getElementById('day-editor');
@@ -921,9 +1060,21 @@
     content.contentEditable = 'true';
     content.innerHTML = escapeHtml(blockData.content || '');
 
+    const debouncedBlockSave = debounce(() => {
+      saveData();
+      updateSaveIndicator(true);
+    }, 400);
+
     content.addEventListener('input', () => {
       blockData.content = content.innerText;
+      setSavingState();
+      debouncedBlockSave();
+    });
+
+    content.addEventListener('blur', () => {
+      blockData.content = content.innerText;
       saveData();
+      updateSaveIndicator(true);
     });
 
     setupBlockKeyboard(row, content, blockData);
@@ -1168,18 +1319,45 @@
     const activeChk = document.getElementById(`chk-${currentType}`);
     if (activeChk) activeChk.style.display = 'inline-block';
 
-    let top, left;
-    if (triggerEventOrElement.getBoundingClientRect) {
-      const rect = triggerEventOrElement.getBoundingClientRect();
-      top = rect.bottom + window.scrollY + 4;
-      left = rect.left + window.scrollX;
+    let triggerRect;
+    if (triggerEventOrElement && triggerEventOrElement.getBoundingClientRect) {
+      triggerRect = triggerEventOrElement.getBoundingClientRect();
+    } else if (triggerEventOrElement && typeof triggerEventOrElement.clientX === 'number') {
+      triggerRect = {
+        top: triggerEventOrElement.clientY,
+        bottom: triggerEventOrElement.clientY,
+        left: triggerEventOrElement.clientX,
+        right: triggerEventOrElement.clientX,
+        width: 0,
+        height: 0
+      };
     } else {
-      top = triggerEventOrElement.clientY + window.scrollY + 4;
-      left = triggerEventOrElement.clientX + window.scrollX;
+      triggerRect = row.getBoundingClientRect();
     }
 
-    const maxLeft = window.innerWidth - 460;
-    if (left > maxLeft) left = maxLeft;
+    const viewportHeight = window.innerHeight;
+    const viewportWidth = window.innerWidth;
+    const totalMenuWidth = 500;
+    const estimatedHeight = 390;
+
+    let top = triggerRect.bottom + 4;
+    let left = triggerRect.left;
+
+    // Smart vertical collision check: if too close to bottom of screen
+    if (top + estimatedHeight > viewportHeight - 16) {
+      if (triggerRect.top > estimatedHeight + 10) {
+        // Flip above the block
+        top = triggerRect.top - estimatedHeight - 4;
+      } else {
+        // Clamp inside viewport so menu is always fully above taskbar
+        top = Math.max(12, viewportHeight - estimatedHeight - 16);
+      }
+    }
+
+    // Horizontal collision check: avoid right-edge cutoff
+    if (left + totalMenuWidth > viewportWidth - 16) {
+      left = Math.max(12, viewportWidth - totalMenuWidth - 16);
+    }
 
     container.style.top = `${top}px`;
     container.style.left = `${left}px`;
@@ -1192,19 +1370,54 @@
     filterMenuItems('');
 
     populateKpiPickerSubmenu();
+    repositionMenuIfOverflow();
+  }
+
+  function repositionMenuIfOverflow() {
+    const container = els.blockMenuContainer;
+    if (!container || !container.classList.contains('active')) return;
+
+    requestAnimationFrame(() => {
+      const rect = container.getBoundingClientRect();
+      const viewportHeight = window.innerHeight;
+      const viewportWidth = window.innerWidth;
+
+      let currentTop = parseFloat(container.style.top) || rect.top;
+      let currentLeft = parseFloat(container.style.left) || rect.left;
+
+      if (rect.bottom > viewportHeight - 14) {
+        const shiftY = rect.bottom - (viewportHeight - 14);
+        currentTop = Math.max(10, currentTop - shiftY);
+        container.style.top = `${currentTop}px`;
+      }
+
+      if (rect.right > viewportWidth - 14) {
+        const shiftX = rect.right - (viewportWidth - 14);
+        currentLeft = Math.max(10, currentLeft - shiftX);
+        container.style.left = `${currentLeft}px`;
+      }
+    });
   }
 
   function populateKpiPickerSubmenu() {
     if (!els.kpiPickerOptions) return;
     let html = `
-      <div class="submenu-item" id="opt-clear-kpi" style="color:var(--text-muted);">
+      <div class="submenu-item" id="opt-clear-kpi" style="color:var(--text-muted); border-bottom: 1px solid var(--border-subtle); margin-bottom: 4px;">
         <span>❌ 取消關聯</span>
       </div>
     `;
 
+    if (state.kpiYears.length === 0) {
+      html += `
+        <div style="padding: 12px; font-size:12px; color:var(--text-muted); text-align:center;">
+          尚無年度 KPI 目標，請先在左側欄新增
+        </div>
+      `;
+    }
+
     state.kpiYears.forEach(kpi => {
       html += `
-        <div style="padding: 4px 10px; font-size:11px; font-weight:700; color:var(--accent); background:var(--bg-tertiary);">
+        <div style="padding: 6px 12px; font-size:11.5px; font-weight:700; color:var(--accent); background:var(--bg-tertiary); position:sticky; top:33px; z-index:3; border-top:1px solid var(--border-subtle);">
           🎯 ${escapeHtml(kpi.title)}
         </div>
         <div class="submenu-item opt-select-kpi" data-year-id="${kpi.id}" data-mg-id="">
@@ -1215,7 +1428,7 @@
       kpi.monthlyGoals.forEach(mg => {
         const monthLabel = mg.month ? mg.month.split('-')[1] + '月' : '月目標';
         html += `
-          <div class="submenu-item opt-select-kpi" data-year-id="${kpi.id}" data-mg-id="${mg.id}" style="padding-left: 20px;">
+          <div class="submenu-item opt-select-kpi" data-year-id="${kpi.id}" data-mg-id="${mg.id}" style="padding-left: 20px;" title="${escapeHtml(mg.title)}">
             <span>📅 [${monthLabel}] ${escapeHtml(mg.title)}</span>
           </div>
         `;
@@ -1274,10 +1487,29 @@
   }
 
   function setupMenuActions() {
-    document.getElementById('menu-opt-link-kpi').addEventListener('click', () => {
+    const showKpiSubmenu = () => {
       els.submenuTurnInto.style.display = 'none';
       els.submenuLinkKpi.style.display = 'block';
-    });
+      repositionMenuIfOverflow();
+    };
+
+    const showTurnIntoSubmenu = () => {
+      els.submenuLinkKpi.style.display = 'none';
+      els.submenuTurnInto.style.display = 'block';
+      repositionMenuIfOverflow();
+    };
+
+    const optLinkKpi = document.getElementById('menu-opt-link-kpi');
+    if (optLinkKpi) {
+      optLinkKpi.addEventListener('click', showKpiSubmenu);
+      optLinkKpi.addEventListener('mouseenter', showKpiSubmenu);
+    }
+
+    const optTurnInto = document.getElementById('menu-opt-turn-into');
+    if (optTurnInto) {
+      optTurnInto.addEventListener('click', showTurnIntoSubmenu);
+      optTurnInto.addEventListener('mouseenter', showTurnIntoSubmenu);
+    }
 
     document.getElementById('menu-opt-delete').addEventListener('click', () => {
       if (state.activeBlock) removeBlock(state.activeBlock);
@@ -1304,11 +1536,6 @@
         closeMenu();
         showToast('已複製區塊');
       }
-    });
-
-    document.getElementById('menu-opt-turn-into').addEventListener('click', () => {
-      els.submenuLinkKpi.style.display = 'none';
-      els.submenuTurnInto.style.display = 'block';
     });
 
     document.getElementById('menu-opt-copy-link').addEventListener('click', () => {
@@ -1367,6 +1594,25 @@
 
     document.addEventListener('keydown', (e) => {
       if (e.key === 'Escape') closeMenu();
+    });
+
+    window.addEventListener('scroll', () => {
+      if (els.blockMenuContainer.classList.contains('active')) {
+        closeMenu();
+      }
+    }, { passive: true });
+
+    document.getElementById('journal-scroll-view')?.addEventListener('scroll', () => {
+      if (els.blockMenuContainer.classList.contains('active')) {
+        closeMenu();
+      }
+    }, { passive: true });
+
+    window.addEventListener('resize', () => {
+      document.querySelectorAll('.reflection-input').forEach(autoResizeReflectionInput);
+      if (els.blockMenuContainer.classList.contains('active')) {
+        repositionMenuIfOverflow();
+      }
     });
   }
 
@@ -1851,6 +2097,24 @@
       }
     });
 
+    // Manual & Auto Save Button in Top Nav
+    els.btnTopSave?.addEventListener('click', () => {
+      saveAllCurrentData(true);
+    });
+
+    // Keyboard shortcut: Ctrl + S / Cmd + S to save everything immediately
+    document.addEventListener('keydown', (e) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 's') {
+        e.preventDefault();
+        saveAllCurrentData(true);
+      }
+    });
+
+    // Save everything cleanly before page is closed or reloaded
+    window.addEventListener('beforeunload', () => {
+      saveAllCurrentData(false);
+    });
+
     els.spaceNameDisplay.addEventListener('click', () => {
       const newName = prompt('請輸入空間名稱：', els.spaceNameDisplay.textContent);
       if (newName && newName.trim()) {
@@ -1873,6 +2137,7 @@
     renderDateStrip();
     renderJournalDay();
     initEvents();
+    updateSaveIndicator(true);
   }
 
   if (document.readyState === 'loading') {
