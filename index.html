@@ -1,0 +1,467 @@
+<!DOCTYPE html>
+<html lang="zh-TW" data-theme="light">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Heptabase Journal - 日誌與年度 KPI / 月誌目標系統</title>
+  <link rel="stylesheet" href="css/style.css">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><rect width=%22100%22 height=%22100%22 rx=%2222%22 fill=%22%232563eb%22/><text y=%22.9em%22 font-size=%2290%22>🎯</text></svg>">
+</head>
+<body>
+
+<!-- =========================================================
+     LOGIN SCREEN (高質感登入畫面)
+     ========================================================= -->
+<div class="login-overlay" id="login-overlay">
+  <div class="login-card">
+    <div class="login-brand">
+      <div class="login-brand-icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" width="24" height="24" stroke-width="2.2">
+          <polygon points="12 2 2 7 12 12 22 7 12 2"></polygon>
+          <polyline points="2 17 12 22 22 17"></polyline>
+          <polyline points="2 12 12 17 22 12"></polyline>
+        </svg>
+      </div>
+      <div class="login-brand-title">Heptabase Journal</div>
+      <div class="login-brand-subtitle">登入個人知識管理與日誌系統</div>
+    </div>
+
+    <form class="login-form" id="login-form" onsubmit="return false;">
+      <div class="form-group">
+        <label class="form-label" for="login-account">帳號</label>
+        <div class="form-input-box">
+          <span class="form-input-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>
+          </span>
+          <input type="text" id="login-account" class="form-input" placeholder="請輸入帳號" autocomplete="username" required>
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label" for="login-password">密碼</label>
+        <div class="form-input-box">
+          <span class="form-input-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>
+          </span>
+          <input type="password" id="login-password" class="form-input" placeholder="請輸入密碼" autocomplete="current-password" required>
+        </div>
+      </div>
+
+      <div class="form-row-remember">
+        <label class="remember-label" for="login-remember">
+          <input type="checkbox" id="login-remember" class="remember-check" checked>
+          <span>記住帳號與密碼 (自動登入)</span>
+        </label>
+      </div>
+
+      <div class="login-error-msg" id="login-error-msg">
+        <span>⚠️</span>
+        <span id="login-error-text">帳號或密碼錯誤，請重新輸入</span>
+      </div>
+
+      <button type="submit" class="btn-login" id="btn-do-login">
+        <span>登入系統</span>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" width="15" height="15"><line x1="5" y1="12" x2="19" y2="12"></line><polyline points="12 5 19 12 12 19"></polyline></svg>
+      </button>
+    </form>
+  </div>
+</div>
+
+<div class="app-container">
+
+  <!-- Left Sidebar (包含日曆 + 年誌/月誌 KPI 戰略體系) -->
+  <aside class="sidebar" id="sidebar">
+    <div class="sidebar-header">
+      <div class="space-selector" id="space-selector-btn" title="點擊修改空間名稱">
+        <span class="space-avatar">j</span>
+        <span id="space-name-display">珍妮的空間</span>
+        <span style="font-size: 10px; color: var(--text-muted);">⌵</span>
+      </div>
+      <div style="display: flex; align-items: center; gap: 6px;">
+        <span class="status-dot" title="連線中"></span>
+        <button class="icon-btn" id="theme-toggle-btn" title="切換深淺模式">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="12" cy="12" r="5"></circle><line x1="12" y1="1" x2="12" y2="3"></line><line x1="12" y1="21" x2="12" y2="23"></line><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line><line x1="1" y1="12" x2="3" y2="12"></line><line x1="21" y1="12" x2="23" y2="12"></line><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line></svg>
+        </button>
+        <button class="icon-btn" id="btn-logout" title="安全登出系統" style="color: var(--text-muted);">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path><polyline points="16 17 21 12 16 7"></polyline><line x1="21" y1="12" x2="9" y2="12"></line></svg>
+        </button>
+      </div>
+    </div>
+
+    <div class="sidebar-scroll">
+      <!-- Search Box -->
+      <div class="search-box">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+        <input type="text" id="search-input" class="search-input" placeholder="搜尋日誌、KPI或關鍵字...">
+      </div>
+
+      <!-- Quick Nav Buttons -->
+      <div class="quick-nav">
+        <button class="nav-item active" id="nav-today">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
+          <span>今天 (Today)</span>
+        </button>
+        <button class="nav-item" id="nav-yesterday">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><polyline points="15 18 9 12 15 6"></polyline></svg>
+          <span>昨天 (Yesterday)</span>
+        </button>
+        <button class="nav-item" id="nav-tomorrow">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><polyline points="9 18 15 12 9 6"></polyline></svg>
+          <span>明天 (Tomorrow)</span>
+        </button>
+      </div>
+
+      <!-- Mini Calendar Widget -->
+      <div class="calendar-widget">
+        <div class="calendar-header">
+          <span class="calendar-title" id="calendar-month-title">2026年 11月</span>
+          <div class="calendar-nav">
+            <button id="cal-prev-btn" title="上個月">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor"><polyline points="15 18 9 12 15 6"></polyline></svg>
+            </button>
+            <button id="cal-next-btn" title="下個月">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor"><polyline points="9 18 15 12 9 6"></polyline></svg>
+            </button>
+          </div>
+        </div>
+        <div class="calendar-weekdays">
+          <div>日</div><div>一</div><div>二</div><div>三</div><div>四</div><div>五</div><div>六</div>
+        </div>
+        <div class="calendar-days" id="calendar-days">
+          <!-- Calendar Days dynamically generated -->
+        </div>
+      </div>
+
+      <!-- =========================================================
+           KPI 戰略架構 (年誌 KPI ➔ 月誌目標 ➔ 展延機制)
+           ========================================================= -->
+      <div>
+        <div class="sidebar-section-title">
+          <span>年誌 (KPI) ➔ 月誌目標</span>
+          <div class="sidebar-title-actions">
+            <button class="icon-btn" id="btn-open-kpi-report" title="查看 KPI 與日誌完成統整報告" style="color: var(--accent);">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" width="13" height="13"><line x1="18" y1="20" x2="18" y2="10"></line><line x1="12" y1="20" x2="12" y2="4"></line><line x1="6" y1="20" x2="6" y2="14"></line></svg>
+            </button>
+            <button class="icon-btn" id="btn-add-year-kpi" title="新增年度 KPI (年誌工作)" style="padding: 2px;">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" width="13" height="13"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+            </button>
+          </div>
+        </div>
+
+        <div class="kpi-container" id="kpi-year-list">
+          <!-- Rendered dynamically: Year KPIs and Monthly Goals -->
+        </div>
+      </div>
+
+      <!-- Recent Days List -->
+      <div>
+        <div class="sidebar-section-title">
+          <span>最近日誌</span>
+        </div>
+        <div class="recent-list" id="recent-list">
+          <!-- Dynamically populated -->
+        </div>
+      </div>
+    </div>
+
+    <!-- Sidebar Footer -->
+    <div class="sidebar-footer">
+      <span style="font-size: 11px; color: var(--text-muted);">本地儲存</span>
+      <div style="display: flex; gap: 4px;">
+        <button class="icon-btn" id="btn-export-backup" title="匯出完整備份 (JSON)">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+        </button>
+        <button class="icon-btn" id="btn-import-backup" title="匯入備份 (JSON)">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
+        </button>
+        <input type="file" id="file-input" accept=".json" style="display:none;">
+      </div>
+    </div>
+  </aside>
+
+  <!-- Main View Area -->
+  <main class="main-area">
+    <!-- Top Nav with Date Strip -->
+    <header class="top-nav">
+      <div class="date-strip-container">
+        <button class="icon-btn" id="date-strip-prev" title="前幾天">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><polyline points="15 18 9 12 15 6"></polyline></svg>
+        </button>
+        <span style="font-size: 14px; color: var(--text-muted); padding: 0 2px;">•</span>
+        <div class="date-strip" id="date-strip">
+          <!-- Dynamically populated -->
+        </div>
+        <button class="icon-btn" id="date-strip-next" title="後幾天">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><polyline points="9 18 15 12 9 6"></polyline></svg>
+        </button>
+
+        <button class="btn-today-dropdown" id="btn-today-dropdown" title="返回今天">
+          <span>今天</span>
+          <span style="font-size: 10px; color: var(--text-muted);">⌵</span>
+        </button>
+      </div>
+
+      <div class="top-nav-right">
+        <!-- Export to Excel Button -->
+        <button class="btn-excel-export" id="btn-top-export-excel" title="匯出完整 KPI 與日誌執行總表至 Excel">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="8" y1="13" x2="16" y2="13"></line><line x1="8" y1="17" x2="16" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
+          <span>匯出 Excel</span>
+        </button>
+
+        <!-- Open KPI Report Button in top nav -->
+        <button class="ai-badge-btn" id="btn-top-kpi-report" style="color: var(--accent); border-color: rgba(37, 99, 235, 0.3);">
+          <span>📊 KPI 追蹤統整</span>
+        </button>
+        
+        <!-- AI button -->
+        <button class="ai-badge-btn" id="btn-ai-assistant">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="12" cy="12" r="10"></circle><path d="M12 16v-4"></path><path d="M12 8h.01"></path></svg>
+          <span>人工智慧</span>
+        </button>
+      </div>
+    </header>
+
+    <!-- Scrollable Journal Content -->
+    <div class="journal-scroll-view" id="journal-scroll-view">
+      <div class="journal-content-box" id="journal-content-box">
+        <!-- Day Section rendered dynamically -->
+      </div>
+    </div>
+  </main>
+
+</div>
+
+<!-- =========================================================
+     HEPTABASE BLOCK CONTEXT MENU & SUBMENU (1:1 還原)
+     ========================================================= -->
+<div class="heptabase-menu-container" id="block-menu-container">
+  
+  <!-- Primary Menu -->
+  <div class="heptabase-popup-menu" id="primary-menu">
+    <div class="menu-search-box">
+      <input type="text" class="menu-search-input" id="menu-search-input" placeholder="搜尋操作...">
+    </div>
+
+    <!-- Link KPI Action -->
+    <div class="menu-item" id="menu-opt-link-kpi" style="color: var(--accent); font-weight: 600;">
+      <div class="menu-item-left">
+        <span class="menu-item-icon">🎯</span>
+        <span>關聯年誌 / 月誌目標</span>
+      </div>
+      <span class="menu-arrow">›</span>
+    </div>
+    
+    <div class="menu-item" id="menu-opt-delete">
+      <div class="menu-item-left">
+        <span class="menu-item-icon">🗑️</span>
+        <span>刪除</span>
+      </div>
+      <span class="menu-item-shortcut">德爾</span>
+    </div>
+
+    <div class="menu-item" id="menu-opt-duplicate">
+      <div class="menu-item-left">
+        <span class="menu-item-icon">📋</span>
+        <span>複製</span>
+      </div>
+      <span class="menu-item-shortcut">Ctrl+D</span>
+    </div>
+
+    <div class="menu-item" id="menu-opt-turn-into">
+      <div class="menu-item-left">
+        <span class="menu-item-icon">🔄</span>
+        <span>變成</span>
+      </div>
+      <span class="menu-arrow">›</span>
+    </div>
+
+    <div class="menu-item" id="menu-opt-copy-link">
+      <div class="menu-item-left">
+        <span class="menu-item-icon">🔗</span>
+        <span>複製連結以阻止</span>
+      </div>
+    </div>
+
+    <div class="menu-item" id="menu-opt-copy-md">
+      <div class="menu-item-left">
+        <span class="menu-item-icon">📄</span>
+        <span>複製為 Markdown</span>
+      </div>
+    </div>
+
+    <div class="menu-item" id="menu-opt-template">
+      <div class="menu-item-left">
+        <span class="menu-item-icon">📅</span>
+        <span>建立模板</span>
+      </div>
+    </div>
+
+    <div class="menu-item" id="menu-opt-new-card">
+      <div class="menu-item-left">
+        <span class="menu-item-icon">📑</span>
+        <span>變成新卡</span>
+      </div>
+      <span class="menu-arrow">›</span>
+    </div>
+  </div>
+
+  <!-- Submenu 1: 變成 (Turn into) -->
+  <div class="heptabase-submenu" id="submenu-turn-into" style="display: none;">
+    <div class="submenu-item" data-turn="paragraph">
+      <div class="submenu-item-left">
+        <span class="submenu-item-icon" style="font-weight: 600;">Aa</span>
+        <span>文字</span>
+      </div>
+      <span class="submenu-checkmark" id="chk-paragraph">✓</span>
+    </div>
+
+    <div class="submenu-item" data-turn="h1">
+      <div class="submenu-item-left">
+        <span class="submenu-item-icon" style="font-weight: 700;">H1</span>
+        <span>標題 1</span>
+      </div>
+      <span class="submenu-checkmark" id="chk-h1" style="display:none;">✓</span>
+    </div>
+
+    <div class="submenu-item" data-turn="h2">
+      <div class="submenu-item-left">
+        <span class="submenu-item-icon" style="font-weight: 700;">H2</span>
+        <span>標題 2</span>
+      </div>
+      <span class="submenu-checkmark" id="chk-h2" style="display:none;">✓</span>
+    </div>
+
+    <div class="submenu-item" data-turn="h3">
+      <div class="submenu-item-left">
+        <span class="submenu-item-icon" style="font-weight: 700;">H3</span>
+        <span>標題 3</span>
+      </div>
+      <span class="submenu-checkmark" id="chk-h3" style="display:none;">✓</span>
+    </div>
+
+    <div class="submenu-item" data-turn="todo">
+      <div class="submenu-item-left">
+        <span class="submenu-item-icon">☑</span>
+        <span>待辦事項清單</span>
+      </div>
+      <span class="submenu-checkmark" id="chk-todo" style="display:none;">✓</span>
+    </div>
+
+    <div class="submenu-item" data-turn="bullet">
+      <div class="submenu-item-left">
+        <span class="submenu-item-icon">•</span>
+        <span>重點清單</span>
+      </div>
+      <span class="submenu-checkmark" id="chk-bullet" style="display:none;">✓</span>
+    </div>
+
+    <div class="submenu-item" data-turn="number">
+      <div class="submenu-item-left">
+        <span class="submenu-item-icon">1.</span>
+        <span>號碼列表</span>
+      </div>
+      <span class="submenu-checkmark" id="chk-number" style="display:none;">✓</span>
+    </div>
+
+    <div class="submenu-item" data-turn="toggle">
+      <div class="submenu-item-left">
+        <span class="submenu-item-icon">►</span>
+        <span>切換列表</span>
+      </div>
+      <span class="submenu-checkmark" id="chk-toggle" style="display:none;">✓</span>
+    </div>
+
+    <div class="submenu-item" data-turn="quote">
+      <div class="submenu-item-left">
+        <span class="submenu-item-icon">“</span>
+        <span>引用</span>
+      </div>
+      <span class="submenu-checkmark" id="chk-quote" style="display:none;">✓</span>
+    </div>
+
+    <div class="submenu-item" data-turn="code">
+      <div class="submenu-item-left">
+        <span class="submenu-item-icon">&lt;/&gt;</span>
+        <span>程式碼區塊</span>
+      </div>
+      <span class="submenu-checkmark" id="chk-code" style="display:none;">✓</span>
+    </div>
+
+    <div class="submenu-item" data-turn="math">
+      <div class="submenu-item-left">
+        <span class="submenu-item-icon">TeX</span>
+        <span>數學模組</span>
+      </div>
+      <span class="submenu-checkmark" id="chk-math" style="display:none;">✓</span>
+    </div>
+
+    <div class="submenu-item" data-turn="toggle-h1">
+      <div class="submenu-item-left">
+        <span class="submenu-item-icon">►H1</span>
+        <span>切換標題 1</span>
+      </div>
+      <span class="submenu-checkmark" id="chk-toggle-h1" style="display:none;">✓</span>
+    </div>
+
+    <div class="submenu-item" data-turn="toggle-h2">
+      <div class="submenu-item-left">
+        <span class="submenu-item-icon">►H2</span>
+        <span>切換標題 2</span>
+      </div>
+      <span class="submenu-checkmark" id="chk-toggle-h2" style="display:none;">✓</span>
+    </div>
+
+    <div class="submenu-item" data-turn="toggle-h3">
+      <div class="submenu-item-left">
+        <span class="submenu-item-icon">►H3</span>
+        <span>切換標題 3</span>
+      </div>
+      <span class="submenu-checkmark" id="chk-toggle-h3" style="display:none;">✓</span>
+    </div>
+  </div>
+
+  <!-- Submenu 2: 關聯 KPI / 月目標 (Link KPI Picker) -->
+  <div class="heptabase-submenu" id="submenu-link-kpi" style="display: none; width: 240px;">
+    <div style="padding: 6px 12px; font-size: 11px; font-weight: bold; color: var(--text-muted); border-bottom: 1px solid var(--border-subtle);">
+      選擇關聯的年度 KPI 或月目標
+    </div>
+    <div id="kpi-picker-options">
+      <!-- Injected dynamically -->
+    </div>
+  </div>
+
+</div>
+
+<!-- =========================================================
+     KPI PROGRESS & TRACEABILITY MODAL (統整回溯報表)
+     ========================================================= -->
+<div class="modal-overlay" id="modal-kpi-report">
+  <div class="kpi-report-modal">
+    <div class="modal-header">
+      <h3>
+        <span>📊</span>
+        <span>年度 KPI 執行進度與工作回溯統整報告</span>
+      </h3>
+      <div style="display: flex; align-items: center; gap: 8px;">
+        <button class="btn-excel-export" id="btn-modal-export-excel" title="匯出當前報表為 Excel 格式">
+          <span>📥 匯出 Excel (.csv)</span>
+        </button>
+        <button class="icon-btn" id="btn-close-kpi-report">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+        </button>
+      </div>
+    </div>
+
+    <div class="modal-body" id="kpi-report-content">
+      <!-- Injected dynamically -->
+    </div>
+  </div>
+</div>
+
+<!-- Toast -->
+<div class="toast" id="toast">操作已完成</div>
+
+<!-- App script -->
+<script src="js/app.js"></script>
+</body>
+</html>
