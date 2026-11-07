@@ -131,7 +131,16 @@
     };
   }
 
-  // --- Firebase Cloud Sync State ---
+  // --- Built-in Firebase Cloud Sync Configuration ---
+  const BUILTIN_FIREBASE_CONFIG = {
+    apiKey: "AIzaSyDEjSPKvJuM4Fmw9Bu6Jyk0hjjaC2tgiD0",
+    authDomain: "my-heptabase.firebaseapp.com",
+    projectId: "my-heptabase",
+    storageBucket: "my-heptabase.firebasestorage.app",
+    messagingSenderId: "1093821621804",
+    appId: "1:1093821621804:web:25a8e3dc9094e26c87d389",
+    measurementId: "G-39ZHX604R6"
+  };
   const FIREBASE_CONFIG_KEY = 'heptabase_firebase_config';
   let firebaseDb = null;
   let firestoreUnsubscribe = null;
@@ -221,6 +230,10 @@
 
   function saveData() {
     try {
+      const curDay = state.journalData[state.selectedDate];
+      if (curDay) {
+        curDay.lastModified = Date.now();
+      }
       localStorage.setItem(STORAGE_KEY, JSON.stringify(state.journalData));
       localStorage.setItem('heptabase_kpi_years', JSON.stringify(state.kpiYears));
       renderCalendar();
@@ -336,16 +349,13 @@
   }
 
   function initFirebaseCloudSync() {
+    let config = BUILTIN_FIREBASE_CONFIG;
     const savedConfigStr = localStorage.getItem(FIREBASE_CONFIG_KEY);
-    if (!savedConfigStr) {
-      updateCloudSyncUI(false);
-      return;
-    }
-
-    const config = parseFirebaseConfig(savedConfigStr);
-    if (!config || !config.apiKey || !config.projectId) {
-      updateCloudSyncUI(false, '設定代碼格式不完整');
-      return;
+    if (savedConfigStr) {
+      const parsed = parseFirebaseConfig(savedConfigStr);
+      if (parsed && parsed.apiKey && parsed.projectId) {
+        config = parsed;
+      }
     }
 
     if (!window.firebase) {
@@ -410,19 +420,48 @@
 
       if (!remoteJournal) return;
 
+      // Smart merge: ensure no local recent journal entry is ever lost
+      let shouldPushMerged = false;
+      const mergedJournal = { ...remoteJournal };
+
+      if (state.journalData && typeof state.journalData === 'object') {
+        Object.keys(state.journalData).forEach(dateKey => {
+          const localDay = state.journalData[dateKey];
+          const remoteDay = remoteJournal[dateKey];
+
+          if (!remoteDay) {
+            // Local day exists, remote does not
+            const hasLocalContent = (localDay.blocks && localDay.blocks.length > 0 && localDay.blocks.some(b => b.content && b.content.trim())) ||
+              (localDay.reflection && (localDay.reflection.affirmation || localDay.reflection.gratitude || localDay.reflection.learning));
+            if (hasLocalContent) {
+              mergedJournal[dateKey] = localDay;
+              shouldPushMerged = true;
+            }
+          } else {
+            // Both exist: check lastModified
+            const localTime = localDay.lastModified || 0;
+            const remoteTime = remoteDay.lastModified || 0;
+            if (localTime > remoteTime) {
+              mergedJournal[dateKey] = localDay;
+              shouldPushMerged = true;
+            }
+          }
+        });
+      }
+
       const curJournalStr = JSON.stringify(state.journalData);
-      const newJournalStr = JSON.stringify(remoteJournal);
+      const newJournalStr = JSON.stringify(mergedJournal);
       const curKpiStr = JSON.stringify(state.kpiYears);
       const newKpiStr = JSON.stringify(remoteKpi || []);
 
-      if (curJournalStr === newJournalStr && curKpiStr === newKpiStr) {
+      if (curJournalStr === newJournalStr && curKpiStr === newKpiStr && !shouldPushMerged) {
         return;
       }
 
       console.log('[Firebase] 收到雲端即時同步資料，更新本地畫面...');
       isRemoteUpdate = true;
       try {
-        state.journalData = remoteJournal;
+        state.journalData = mergedJournal;
         if (remoteKpi && Array.isArray(remoteKpi) && remoteKpi.length > 0) {
           state.kpiYears = remoteKpi;
         }
@@ -438,6 +477,12 @@
         showToast('☁️ 雲端已即時同步最新資料');
       } finally {
         isRemoteUpdate = false;
+      }
+
+      // If local had newer items not yet in cloud, push merged result to cloud immediately!
+      if (shouldPushMerged) {
+        console.log('[Firebase] 本地包含更新日誌，自動合併並推播至雲端...');
+        syncDataToCloud(true);
       }
     }, (error) => {
       console.error('[Firebase] Firestore onSnapshot 監聽中斷:', error);
@@ -514,8 +559,8 @@
   function openCloudSyncModal() {
     const savedConfigStr = localStorage.getItem(FIREBASE_CONFIG_KEY);
     const input = els.firebaseConfigInput || document.getElementById('firebase-config-input');
-    if (savedConfigStr && input && !input.value.trim()) {
-      input.value = savedConfigStr;
+    if (input && !input.value.trim()) {
+      input.value = savedConfigStr || JSON.stringify(BUILTIN_FIREBASE_CONFIG, null, 2);
     }
     const modal = els.modalCloudSync || document.getElementById('modal-cloud-sync');
     if (modal) {
