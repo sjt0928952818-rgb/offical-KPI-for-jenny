@@ -380,6 +380,18 @@
     }
   }
 
+  function isUserCurrentlyTyping() {
+    const el = document.activeElement;
+    if (!el) return false;
+    const tag = el.tagName;
+    if (tag === 'INPUT' || tag === 'TEXTAREA') return true;
+    if (el.isContentEditable) return true;
+    if (el.classList && (el.classList.contains('reflection-input') || el.classList.contains('block-content'))) {
+      return true;
+    }
+    return false;
+  }
+
   function setupFirestoreListener() {
     if (!firebaseDb) return;
     if (firestoreUnsubscribe) {
@@ -396,6 +408,7 @@
         return;
       }
 
+      // Ignore local optimistic writes while still pending
       if (docSnap.metadata && docSnap.metadata.hasPendingWrites) {
         return;
       }
@@ -420,48 +433,20 @@
 
       if (!remoteJournal) return;
 
-      // Smart merge: ensure no local recent journal entry is ever lost
-      let shouldPushMerged = false;
-      const mergedJournal = { ...remoteJournal };
+      const curJournalStr = localStorage.getItem(STORAGE_KEY) || JSON.stringify(state.journalData);
+      const newJournalStr = remoteData.journalDataJson || JSON.stringify(remoteJournal);
+      const curKpiStr = localStorage.getItem('heptabase_kpi_years') || JSON.stringify(state.kpiYears);
+      const newKpiStr = remoteData.kpiYearsJson || JSON.stringify(remoteKpi || []);
 
-      if (state.journalData && typeof state.journalData === 'object') {
-        Object.keys(state.journalData).forEach(dateKey => {
-          const localDay = state.journalData[dateKey];
-          const remoteDay = remoteJournal[dateKey];
-
-          if (!remoteDay) {
-            // Local day exists, remote does not
-            const hasLocalContent = (localDay.blocks && localDay.blocks.length > 0 && localDay.blocks.some(b => b.content && b.content.trim())) ||
-              (localDay.reflection && (localDay.reflection.affirmation || localDay.reflection.gratitude || localDay.reflection.learning));
-            if (hasLocalContent) {
-              mergedJournal[dateKey] = localDay;
-              shouldPushMerged = true;
-            }
-          } else {
-            // Both exist: check lastModified
-            const localTime = localDay.lastModified || 0;
-            const remoteTime = remoteDay.lastModified || 0;
-            if (localTime > remoteTime) {
-              mergedJournal[dateKey] = localDay;
-              shouldPushMerged = true;
-            }
-          }
-        });
-      }
-
-      const curJournalStr = JSON.stringify(state.journalData);
-      const newJournalStr = JSON.stringify(mergedJournal);
-      const curKpiStr = JSON.stringify(state.kpiYears);
-      const newKpiStr = JSON.stringify(remoteKpi || []);
-
-      if (curJournalStr === newJournalStr && curKpiStr === newKpiStr && !shouldPushMerged) {
+      // If data is identical, return silently without touching UI or triggering writes
+      if (curJournalStr === newJournalStr && curKpiStr === newKpiStr) {
         return;
       }
 
-      console.log('[Firebase] 收到雲端即時同步資料，更新本地畫面...');
+      console.log('[Firebase] 收到遠端雲端資料更新，靜音同步至本地...');
       isRemoteUpdate = true;
       try {
-        state.journalData = mergedJournal;
+        state.journalData = remoteJournal;
         if (remoteKpi && Array.isArray(remoteKpi) && remoteKpi.length > 0) {
           state.kpiYears = remoteKpi;
         }
@@ -472,17 +457,16 @@
         renderRecentList();
         renderKpiTree();
         renderDateStrip();
-        renderJournalDay();
+
+        // 核心保護：若使用者當前正在輸入任何欄位，絕不重新渲染編輯區，保證游標與打字 100% 順暢不中斷！
+        if (!isUserCurrentlyTyping()) {
+          renderJournalDay();
+        }
+
+        // 靜音更新右上角狀態燈，絕不彈出干擾打字的 Toast 橫幅訊息
         updateSaveIndicator(true);
-        showToast('☁️ 雲端已即時同步最新資料');
       } finally {
         isRemoteUpdate = false;
-      }
-
-      // If local had newer items not yet in cloud, push merged result to cloud immediately!
-      if (shouldPushMerged) {
-        console.log('[Firebase] 本地包含更新日誌，自動合併並推播至雲端...');
-        syncDataToCloud(true);
       }
     }, (error) => {
       console.error('[Firebase] Firestore onSnapshot 監聽中斷:', error);
@@ -492,7 +476,7 @@
 
   const debouncedCloudSync = debounce(() => {
     doSyncDataToCloud();
-  }, 1000);
+  }, 3000);
 
   function syncDataToCloud(forceImmediate = false) {
     if (!firebaseDb || isRemoteUpdate) return;
