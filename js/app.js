@@ -644,6 +644,11 @@
     btnTopExportExcel: document.getElementById('btn-top-export-excel'),
     btnModalExportExcel: document.getElementById('btn-modal-export-excel'),
     searchInput: document.getElementById('search-input'),
+    btnClearSearch: document.getElementById('btn-clear-search'),
+    searchResultsBox: document.getElementById('search-results-box'),
+    searchResultsCount: document.getElementById('search-results-count'),
+    searchResultsList: document.getElementById('search-results-list'),
+    btnCloseSearch: document.getElementById('btn-close-search'),
     navToday: document.getElementById('nav-today'),
     navYesterday: document.getElementById('nav-yesterday'),
     navTomorrow: document.getElementById('nav-tomorrow'),
@@ -1489,15 +1494,19 @@
     if (!kpi) return null;
 
     let mgTitle = '';
+    let pillText = '';
     if (kpiRef.monthGoalId) {
       const mg = kpi.monthlyGoals.find(m => m.id === kpiRef.monthGoalId);
       if (mg) mgTitle = ` / ${mg.month ? mg.month.split('-')[1] + '月' : '月目標'}`;
+      pillText = `🎯 ${kpi.title}${mgTitle}`;
+    } else {
+      pillText = `🎯 [年度] ${kpi.title}`;
     }
 
     const pill = document.createElement('span');
     pill.className = 'block-kpi-pill';
-    pill.innerHTML = `🎯 ${escapeHtml(kpi.title)}${mgTitle}`;
-    pill.title = '點擊檢視此 KPI 與月目標進度報表';
+    pill.innerHTML = escapeHtml(pillText);
+    pill.title = '點擊檢視此 KPI 執行進度與報表';
     pill.addEventListener('click', (e) => {
       e.stopPropagation();
       openKpiReportModal(kpi.id);
@@ -1804,22 +1813,28 @@
 
     state.kpiYears.forEach(kpi => {
       html += `
-        <div style="padding: 6px 12px; font-size:11.5px; font-weight:700; color:var(--accent); background:var(--bg-tertiary); position:sticky; top:33px; z-index:3; border-top:1px solid var(--border-subtle);">
-          🎯 ${escapeHtml(kpi.title)}
-        </div>
-        <div class="submenu-item opt-select-kpi" data-year-id="${kpi.id}" data-mg-id="">
-          <span>↳ 僅關聯年度 KPI</span>
+        <div class="submenu-item opt-select-kpi opt-kpi-year-item" data-year-id="${kpi.id}" data-mg-id="" style="font-weight:700; color:var(--accent); background:var(--bg-tertiary); position:sticky; top:33px; z-index:3; border-top:1px solid var(--border-subtle); display:flex; align-items:center; justify-content:space-between; cursor:pointer;" title="點擊直接關聯此【年度 KPI】標籤">
+          <span>🎯 [年度] ${escapeHtml(kpi.title)}</span>
+          <span style="font-size:10px; font-weight:normal; padding:2px 7px; background:var(--accent-light); color:var(--accent); border-radius:4px; border:1px solid rgba(37,99,235,0.2);">選擇年度標籤</span>
         </div>
       `;
 
-      kpi.monthlyGoals.forEach(mg => {
-        const monthLabel = mg.month ? mg.month.split('-')[1] + '月' : '月目標';
+      if (kpi.monthlyGoals && kpi.monthlyGoals.length > 0) {
+        kpi.monthlyGoals.forEach(mg => {
+          const monthLabel = mg.month ? mg.month.split('-')[1] + '月' : '月目標';
+          html += `
+            <div class="submenu-item opt-select-kpi" data-year-id="${kpi.id}" data-mg-id="${mg.id}" style="padding-left: 24px;" title="關聯月目標：${escapeHtml(mg.title)}">
+              <span>📅 [${monthLabel}] ${escapeHtml(mg.title)}</span>
+            </div>
+          `;
+        });
+      } else {
         html += `
-          <div class="submenu-item opt-select-kpi" data-year-id="${kpi.id}" data-mg-id="${mg.id}" style="padding-left: 20px;" title="${escapeHtml(mg.title)}">
-            <span>📅 [${monthLabel}] ${escapeHtml(mg.title)}</span>
+          <div style="padding: 4px 12px 6px 24px; font-size:11px; color:var(--text-muted); font-style:italic;">
+            （無月目標，可直接點擊上方【年度】標籤關聯）
           </div>
         `;
-      });
+      }
     });
 
     els.kpiPickerOptions.innerHTML = html;
@@ -1854,9 +1869,13 @@
       if (kpiRef && kpiRef.yearId) {
         const newPill = createKpiPill(kpiRef);
         if (newPill) wrapper.appendChild(newPill);
-        showToast('已成功關聯 KPI / 月目標');
+        if (!kpiRef.monthGoalId) {
+          showToast('已成功關聯【年度 KPI】標籤');
+        } else {
+          showToast('已成功關聯【月目標】標籤');
+        }
       } else {
-        showToast('已移除關聯');
+        showToast('已移除關聯標籤');
       }
     }
 
@@ -2015,12 +2034,137 @@
   }
 
   // =========================================================
-  // EXCEL EXPORT (包含 KPI 關聯與每日 肯定、感謝、學習/反省)
+  // EXCEL EXPORT (時間範圍自選 + 每日覆盤單列不重複)
   // =========================================================
-  function exportKpiToExcel() {
+
+  function openExportExcelModal() {
+    const modal = document.getElementById('modal-export-excel');
+    if (!modal) {
+      exportKpiToExcel();
+      return;
+    }
+
+    const now = new Date();
+    const y = now.getFullYear();
+    const m = now.getMonth() + 1;
+    const lastMDate = new Date(y, m - 2, 1);
+    const lastY = lastMDate.getFullYear();
+    const lastM = lastMDate.getMonth() + 1;
+
+    // Update dynamic labels
+    const labelThisMonth = document.getElementById('export-label-this-month');
+    if (labelThisMonth) labelThisMonth.textContent = `📅 本月 (${y}年${m}月)`;
+
+    const labelLastMonth = document.getElementById('export-label-last-month');
+    if (labelLastMonth) labelLastMonth.textContent = `📅 上個月 (${lastY}年${lastM}月)`;
+
+    const labelThisYear = document.getElementById('export-label-this-year');
+    if (labelThisYear) labelThisYear.textContent = `🎯 今年度 (${y - 1911}年 / ${y}年)`;
+
+    // Set default custom dates
+    const startInput = document.getElementById('export-start-date');
+    const endInput = document.getElementById('export-end-date');
+    const lastDayOfMonth = new Date(y, m, 0).getDate();
+    if (startInput && !startInput.value) {
+      startInput.value = `${y}-${String(m).padStart(2, '0')}-01`;
+    }
+    if (endInput && !endInput.value) {
+      endInput.value = `${y}-${String(m).padStart(2, '0')}-${String(lastDayOfMonth).padStart(2, '0')}`;
+    }
+
+    // Bind radio change
+    document.querySelectorAll('input[name="export-range-type"]').forEach(radio => {
+      radio.onchange = (e) => {
+        const customBox = document.getElementById('export-custom-date-box');
+        if (customBox) {
+          customBox.style.display = e.target.value === 'custom' ? 'block' : 'none';
+        }
+      };
+    });
+
+    // Bind confirm button
+    const btnConfirm = document.getElementById('btn-confirm-export-excel');
+    if (btnConfirm) {
+      btnConfirm.onclick = handleConfirmExportExcel;
+    }
+
+    modal.classList.add('active');
+    modal.style.display = 'flex';
+  }
+
+  function closeExportExcelModal() {
+    const modal = document.getElementById('modal-export-excel');
+    if (modal) {
+      modal.classList.remove('active');
+      modal.style.display = 'none';
+    }
+  }
+
+  function handleConfirmExportExcel() {
+    const selectedRadio = document.querySelector('input[name="export-range-type"]:checked');
+    const type = selectedRadio ? selectedRadio.value : 'all';
+
+    const now = new Date();
+    const y = now.getFullYear();
+    const m = now.getMonth() + 1;
+    const lastMDate = new Date(y, m - 2, 1);
+    const lastY = lastMDate.getFullYear();
+    const lastM = lastMDate.getMonth() + 1;
+
+    let startDate = null;
+    let endDate = null;
+    let suffix = '全部紀錄';
+
+    if (type === 'this_month') {
+      const lastDay = new Date(y, m, 0).getDate();
+      startDate = `${y}-${String(m).padStart(2, '0')}-01`;
+      endDate = `${y}-${String(m).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
+      suffix = `${y}年${m}月`;
+    } else if (type === 'last_month') {
+      const lastDay = new Date(lastY, lastM, 0).getDate();
+      startDate = `${lastY}-${String(lastM).padStart(2, '0')}-01`;
+      endDate = `${lastY}-${String(lastM).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`;
+      suffix = `${lastY}年${lastM}月`;
+    } else if (type === 'this_year') {
+      startDate = `${y}-01-01`;
+      endDate = `${y}-12-31`;
+      suffix = `${y - 1911}年(${y}年)`;
+    } else if (type === 'custom') {
+      const startInput = document.getElementById('export-start-date');
+      const endInput = document.getElementById('export-end-date');
+      startDate = startInput && startInput.value ? startInput.value : null;
+      endDate = endInput && endInput.value ? endInput.value : null;
+      if (startDate && endDate) {
+        suffix = `${startDate}至${endDate}`;
+      } else if (startDate) {
+        suffix = `${startDate}起`;
+      } else if (endDate) {
+        suffix = `至${endDate}`;
+      } else {
+        suffix = '自訂區間';
+      }
+    }
+
+    closeExportExcelModal();
+    executeExportExcel({ startDate, endDate, filenameSuffix: suffix });
+  }
+
+  function exportKpiToExcel(options) {
+    if (options && (options.startDate || options.endDate || options.filenameSuffix)) {
+      executeExportExcel(options);
+    } else {
+      openExportExcelModal();
+    }
+  }
+
+  function executeExportExcel(range = {}) {
+    const { startDate, endDate, filenameSuffix } = range;
     const linkedDaysMap = {};
 
     Object.keys(state.journalData).forEach(dateKey => {
+      if (startDate && dateKey < startDate) return;
+      if (endDate && dateKey > endDate) return;
+
       const day = state.journalData[dateKey];
       if (day.blocks) {
         day.blocks.forEach(b => {
@@ -2043,34 +2187,66 @@
       '日誌日期',
       '日誌工作內容',
       '工作完成狀態',
-      '日誌【肯定】',
-      '日誌【感謝】',
-      '日誌【學習(反省)】'
+      '日誌【肯定自己】',
+      '日誌【感謝身邊】',
+      '日誌【學習與反省】'
     ];
     const rows = [headers];
 
+    // 核心要求 3：同日若有多個工作，覆盤與心靈交流只在第一列輸出，其餘列維持空白
+    const emittedReflectionDates = new Set();
+
     state.kpiYears.forEach(kpi => {
-      const mGoals = kpi.monthlyGoals;
+      const mGoals = kpi.monthlyGoals || [];
       const doneM = mGoals.filter(m => m.completed).length;
       const kpiProgress = mGoals.length > 0 ? `${Math.round((doneM / mGoals.length) * 100)}%` : '0%';
       const dayTasksForKpi = linkedDaysMap[kpi.id] || [];
 
       if (mGoals.length === 0) {
-        rows.push([
-          kpi.year || '115年',
-          kpi.title,
-          kpi.description || '',
-          kpiProgress,
-          '無月目標',
-          '',
-          '',
-          '',
-          '',
-          '',
-          '',
-          '',
-          ''
-        ]);
+        const directTasks = dayTasksForKpi.filter(t => !t.block.kpiRef.monthGoalId);
+        if (directTasks.length === 0) {
+          rows.push([
+            kpi.year || '115年',
+            kpi.title,
+            kpi.description || '',
+            kpiProgress,
+            '年度直屬',
+            '（無月目標）',
+            '-',
+            '',
+            '（此期間無具體日誌工作）',
+            '',
+            '',
+            '',
+            ''
+          ]);
+        } else {
+          directTasks.forEach(t => {
+            let aff = '', grat = '', learn = '';
+            if (!emittedReflectionDates.has(t.date)) {
+              const ref = t.reflection || {};
+              aff = ref.affirmation || '';
+              grat = ref.gratitude || '';
+              learn = ref.learning || '';
+              emittedReflectionDates.add(t.date);
+            }
+            rows.push([
+              kpi.year || '115年',
+              kpi.title,
+              kpi.description || '',
+              kpiProgress,
+              '年度直屬',
+              '（直接關聯年度KPI）',
+              '-',
+              t.date,
+              t.block.content || '',
+              t.block.checked ? '已完成' : '進行中',
+              aff,
+              grat,
+              learn
+            ]);
+          });
+        }
       } else {
         mGoals.forEach(mg => {
           const monthLabel = mg.month ? mg.month.split('-')[1] + '月' : '本月';
@@ -2087,7 +2263,7 @@
               mg.title,
               mgStatus,
               '',
-              '（尚無具體日誌工作）',
+              '（此期間無具體日誌工作）',
               '',
               '',
               '',
@@ -2095,7 +2271,14 @@
             ]);
           } else {
             tasksUnderMg.forEach(t => {
-              const ref = t.reflection || {};
+              let aff = '', grat = '', learn = '';
+              if (!emittedReflectionDates.has(t.date)) {
+                const ref = t.reflection || {};
+                aff = ref.affirmation || '';
+                grat = ref.gratitude || '';
+                learn = ref.learning || '';
+                emittedReflectionDates.add(t.date);
+              }
               rows.push([
                 kpi.year || '115年',
                 kpi.title,
@@ -2107,34 +2290,42 @@
                 t.date,
                 t.block.content || '',
                 t.block.checked ? '已完成' : '進行中',
-                ref.affirmation || '',
-                ref.gratitude || '',
-                ref.learning || ''
+                aff,
+                grat,
+                learn
               ]);
             });
           }
         });
-      }
 
-      const directTasks = dayTasksForKpi.filter(t => !t.block.kpiRef.monthGoalId);
-      directTasks.forEach(t => {
-        const ref = t.reflection || {};
-        rows.push([
-          kpi.year || '115年',
-          kpi.title,
-          kpi.description || '',
-          kpiProgress,
-          '年度直屬',
-          '（直接關聯年度KPI）',
-          '-',
-          t.date,
-          t.block.content || '',
-          t.block.checked ? '已完成' : '進行中',
-          ref.affirmation || '',
-          ref.gratitude || '',
-          ref.learning || ''
-        ]);
-      });
+        // Tasks directly associated with the Year KPI (without monthGoalId)
+        const directTasks = dayTasksForKpi.filter(t => !t.block.kpiRef.monthGoalId);
+        directTasks.forEach(t => {
+          let aff = '', grat = '', learn = '';
+          if (!emittedReflectionDates.has(t.date)) {
+            const ref = t.reflection || {};
+            aff = ref.affirmation || '';
+            grat = ref.gratitude || '';
+            learn = ref.learning || '';
+            emittedReflectionDates.add(t.date);
+          }
+          rows.push([
+            kpi.year || '115年',
+            kpi.title,
+            kpi.description || '',
+            kpiProgress,
+            '年度直屬',
+            '（直接關聯年度KPI）',
+            '-',
+            t.date,
+            t.block.content || '',
+            t.block.checked ? '已完成' : '進行中',
+            aff,
+            grat,
+            learn
+          ]);
+        });
+      }
     });
 
     const csvContent = '\uFEFF' + rows.map(r => r.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(',')).join('\r\n');
@@ -2142,11 +2333,17 @@
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `年度KPI與月誌日誌工作執行總表_${getTodayString()}.csv`;
+    const namePart = filenameSuffix ? `_${filenameSuffix}` : `_${getTodayString()}`;
+    a.download = `年度KPI與月誌日誌工作執行總表${namePart}.csv`;
     a.click();
     URL.revokeObjectURL(url);
-    showToast('已成功匯出 Excel 報表！');
+    showToast(`已成功匯出 Excel 報表 (${filenameSuffix || '全部'})！`);
   }
+
+  // Export functions to window
+  window.openExportExcelModal = openExportExcelModal;
+  window.closeExportExcelModal = closeExportExcelModal;
+  window.exportKpiToExcel = exportKpiToExcel;
 
   // =========================================================
   // PROGRESS & TRACEABILITY REPORT MODAL
@@ -2298,48 +2495,164 @@
     els.modalKpiReport.classList.remove('active');
   }
 
-  // --- Search Input in Sidebar ---
+  // --- Search Snippet Helpers ---
+  function truncateSnippet(text, query, maxLen = 42) {
+    if (!text) return '';
+    const idx = text.toLowerCase().indexOf(query.toLowerCase());
+    if (idx === -1) {
+      return text.length > maxLen ? text.slice(0, maxLen) + '...' : text;
+    }
+    const start = Math.max(0, idx - 12);
+    const end = Math.min(text.length, idx + query.length + 26);
+    let snippet = text.slice(start, end);
+    if (start > 0) snippet = '...' + snippet;
+    if (end < text.length) snippet = snippet + '...';
+    return snippet;
+  }
+
+  function highlightKeyword(safeHtml, query) {
+    if (!query) return safeHtml;
+    const escapedQ = query.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const regex = new RegExp(`(${escapedQ})`, 'gi');
+    return safeHtml.replace(regex, '<span class="search-highlight">$1</span>');
+  }
+
+  // --- Search Input in Sidebar (即時於搜尋框下方展開結果並支援點擊跳轉) ---
   function setupSearch() {
+    function clearSearch() {
+      els.searchInput.value = '';
+      if (els.btnClearSearch) els.btnClearSearch.style.display = 'none';
+      if (els.searchResultsBox) els.searchResultsBox.style.display = 'none';
+    }
+
+    if (els.btnClearSearch) {
+      els.btnClearSearch.addEventListener('click', clearSearch);
+    }
+    if (els.btnCloseSearch) {
+      els.btnCloseSearch.addEventListener('click', clearSearch);
+    }
+
     els.searchInput.addEventListener('input', debounce((e) => {
       const q = e.target.value.trim().toLowerCase();
       if (!q) {
-        renderRecentList();
+        clearSearch();
         return;
       }
 
-      const matchedDates = [];
-      Object.keys(state.journalData).forEach(dateKey => {
-        const day = state.journalData[dateKey];
-        const matchBlock = day.blocks && day.blocks.some(b => b.content && b.content.toLowerCase().includes(q));
-        const matchRef = day.reflection && (
-          (day.reflection.affirmation && day.reflection.affirmation.toLowerCase().includes(q)) ||
-          (day.reflection.gratitude && day.reflection.gratitude.toLowerCase().includes(q)) ||
-          (day.reflection.learning && day.reflection.learning.toLowerCase().includes(q))
-        );
+      if (els.btnClearSearch) els.btnClearSearch.style.display = 'block';
 
-        if (matchBlock || matchRef) {
-          matchedDates.push(dateKey);
+      const matchedDays = [];
+      const allDates = Object.keys(state.journalData).sort().reverse();
+
+      allDates.forEach(dateKey => {
+        const day = state.journalData[dateKey];
+        const snippets = [];
+
+        // 1. Search in blocks (tasks, headers, notes)
+        if (day.blocks && Array.isArray(day.blocks)) {
+          day.blocks.forEach(b => {
+            if (b.content && b.content.toLowerCase().includes(q)) {
+              const prefix = b.type === 'todo' ? (b.checked ? '☑️ ' : '☐ ') : '📌 ';
+              snippets.push(prefix + truncateSnippet(b.content, q));
+            }
+          });
+        }
+
+        // 2. Search in reflection fields
+        if (day.reflection) {
+          if (day.reflection.affirmation && day.reflection.affirmation.toLowerCase().includes(q)) {
+            snippets.push('✨ 肯定：' + truncateSnippet(day.reflection.affirmation, q));
+          }
+          if (day.reflection.gratitude && day.reflection.gratitude.toLowerCase().includes(q)) {
+            snippets.push('🙏 感謝：' + truncateSnippet(day.reflection.gratitude, q));
+          }
+          if (day.reflection.learning && day.reflection.learning.toLowerCase().includes(q)) {
+            snippets.push('💡 學習反省：' + truncateSnippet(day.reflection.learning, q));
+          }
+        }
+
+        // 3. Search in tags
+        if (day.tags && Array.isArray(day.tags)) {
+          day.tags.forEach(t => {
+            if (t.toLowerCase().includes(q)) {
+              snippets.push('🏷️ 標籤：#' + t);
+            }
+          });
+        }
+
+        // 4. Search in KPI linkage
+        if (day.blocks) {
+          day.blocks.forEach(b => {
+            if (b.kpiRef && b.kpiRef.yearId) {
+              const kpi = state.kpiYears.find(k => k.id === b.kpiRef.yearId);
+              if (kpi && kpi.title && kpi.title.toLowerCase().includes(q)) {
+                snippets.push(`🎯 關聯KPI：${kpi.title}`);
+              }
+            }
+          });
+        }
+
+        if (snippets.length > 0) {
+          matchedDays.push({
+            date: dateKey,
+            snippets: snippets.slice(0, 3)
+          });
         }
       });
 
-      if (matchedDates.length === 0) {
-        els.recentList.innerHTML = `<div style="font-size:12px;color:var(--text-muted);padding:6px;">無符合 "${escapeHtml(q)}" 的結果</div>`;
+      if (!els.searchResultsBox || !els.searchResultsList) return;
+
+      els.searchResultsBox.style.display = 'block';
+
+      if (matchedDays.length === 0) {
+        if (els.searchResultsCount) els.searchResultsCount.textContent = '查無符合日誌';
+        els.searchResultsList.innerHTML = `
+          <div style="padding: 14px 12px; font-size:12px; color:var(--text-muted); text-align:center;">
+            無符合「<b>${escapeHtml(q)}</b>」的日誌或內容
+          </div>
+        `;
       } else {
+        if (els.searchResultsCount) els.searchResultsCount.textContent = `找到 ${matchedDays.length} 天符合日誌`;
+
         let html = '';
-        matchedDates.forEach(dateKey => {
-          const info = formatDisplayDate(dateKey);
+        matchedDays.forEach(item => {
+          const info = formatDisplayDate(item.date);
+          const isSelected = item.date === state.selectedDate;
+
+          const snippetHtml = item.snippets.map(s => {
+            const safe = escapeHtml(s);
+            return `<div class="search-result-snippet">${highlightKeyword(safe, q)}</div>`;
+          }).join('');
+
           html += `
-            <div class="recent-item" data-date="${dateKey}">
-              <span>🔍 ${info.title}</span>
+            <div class="search-result-item ${isSelected ? 'active' : ''}" data-date="${item.date}" title="點擊檢視 ${info.title} 日誌">
+              <div class="search-result-date">
+                <span>📅 ${info.full}</span>
+                ${item.date === getTodayString() ? '<span style="font-size:10px; background:var(--accent-light); color:var(--accent); padding:1px 5px; border-radius:10px;">今天</span>' : ''}
+              </div>
+              <div class="search-result-snippets">
+                ${snippetHtml}
+              </div>
             </div>
           `;
         });
-        els.recentList.innerHTML = html;
-        els.recentList.querySelectorAll('.recent-item').forEach(el => {
-          el.addEventListener('click', () => selectDate(el.getAttribute('data-date')));
+
+        els.searchResultsList.innerHTML = html;
+
+        els.searchResultsList.querySelectorAll('.search-result-item').forEach(el => {
+          el.addEventListener('click', () => {
+            const date = el.getAttribute('data-date');
+            selectDate(date);
+
+            els.searchResultsList.querySelectorAll('.search-result-item').forEach(i => i.classList.remove('active'));
+            el.classList.add('active');
+
+            const info = formatDisplayDate(date);
+            showToast(`已跳轉至 ${info.title} 日誌`);
+          });
         });
       }
-    }, 250));
+    }, 200));
   }
 
   function setCursorToEnd(el) {

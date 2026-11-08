@@ -96,10 +96,24 @@
     </div>
 
     <div class="sidebar-scroll">
-      <!-- Search Box -->
-      <div class="search-box">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
-        <input type="text" id="search-input" class="search-input" placeholder="搜尋日誌、KPI或關鍵字...">
+      <!-- Search Box & Immediate Results Below -->
+      <div class="search-box-container">
+        <div class="search-box">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+          <input type="text" id="search-input" class="search-input" placeholder="搜尋日誌、KPI或關鍵字..." autocomplete="off">
+          <button type="button" id="btn-clear-search" class="btn-clear-search" title="清除搜尋">✕</button>
+        </div>
+
+        <!-- Search Results Box Directly Below Search Box -->
+        <div class="search-results-box" id="search-results-box" style="display: none;">
+          <div class="search-results-header">
+            <span id="search-results-count">🔍 搜尋結果</span>
+            <button type="button" id="btn-close-search" class="icon-btn" style="width:18px; height:18px; font-size:11px;" title="關閉搜尋">✕</button>
+          </div>
+          <div class="search-results-list" id="search-results-list">
+            <!-- Dynamically populated search items -->
+          </div>
+        </div>
       </div>
 
       <!-- Quick Nav Buttons -->
@@ -222,7 +236,7 @@
         </button>
 
         <!-- Export to Excel Button -->
-        <button class="btn-excel-export" id="btn-top-export-excel" title="匯出完整 KPI 與日誌執行總表至 Excel">
+        <button class="btn-excel-export" id="btn-top-export-excel" onclick="if(window.openExportExcelModal)window.openExportExcelModal();" title="匯出完整 KPI 與日誌執行總表至 Excel (可自選時間範圍)">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="8" y1="13" x2="16" y2="13"></line><line x1="8" y1="17" x2="16" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
           <span>匯出 Excel</span>
         </button>
@@ -462,7 +476,7 @@
         <span>年度 KPI 執行進度與工作回溯統整報告</span>
       </h3>
       <div style="display: flex; align-items: center; gap: 8px;">
-        <button class="btn-excel-export" id="btn-modal-export-excel" title="匯出當前報表為 Excel 格式">
+        <button class="btn-excel-export" id="btn-modal-export-excel" onclick="if(window.openExportExcelModal)window.openExportExcelModal();" title="匯出當前報表為 Excel 格式 (可自選時間範圍)">
           <span>📥 匯出 Excel (.csv)</span>
         </button>
         <button class="icon-btn" id="btn-close-kpi-report">
@@ -473,6 +487,78 @@
 
     <div class="modal-body" id="kpi-report-content">
       <!-- Injected dynamically -->
+    </div>
+  </div>
+</div>
+
+<!-- =========================================================
+     EXCEL EXPORT DATE RANGE MODAL (匯出時間範圍選擇)
+     ========================================================= -->
+<div class="modal-overlay" id="modal-export-excel" onclick="if(event.target===this)closeExportExcelModal()">
+  <div class="kpi-report-modal" style="max-width: 490px;">
+    <div class="modal-header">
+      <h3>
+        <span>📥</span>
+        <span>匯出 Excel (.csv) - 選擇時間範圍</span>
+      </h3>
+      <button class="icon-btn" id="btn-close-export-excel" onclick="closeExportExcelModal()">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+      </button>
+    </div>
+    <div class="modal-body" style="padding: 20px 24px;">
+      <div style="font-size: 13px; color: var(--text-secondary); margin-bottom: 16px; line-height: 1.5;">
+        請選擇您要匯出的日誌工作與 KPI 執行時間範圍：
+      </div>
+
+      <div class="export-range-options" style="display: flex; flex-direction: column; gap: 9px; margin-bottom: 16px;">
+        <label class="export-radio-label">
+          <input type="radio" name="export-range-type" value="all" checked>
+          <span>🌟 全部時間 (所有歷史紀錄)</span>
+        </label>
+        <label class="export-radio-label">
+          <input type="radio" name="export-range-type" value="this_month">
+          <span id="export-label-this-month">📅 本月</span>
+        </label>
+        <label class="export-radio-label">
+          <input type="radio" name="export-range-type" value="last_month">
+          <span id="export-label-last-month">📅 上個月</span>
+        </label>
+        <label class="export-radio-label">
+          <input type="radio" name="export-range-type" value="this_year">
+          <span id="export-label-this-year">🎯 今年度 (115年)</span>
+        </label>
+        <label class="export-radio-label">
+          <input type="radio" name="export-range-type" value="custom">
+          <span>📆 自訂日期區間</span>
+        </label>
+      </div>
+
+      <div id="export-custom-date-box" style="display: none; padding: 12px 14px; background: var(--bg-tertiary); border: 1px solid var(--border-color); border-radius: 6px; margin-bottom: 18px;">
+        <div style="display: flex; align-items: center; gap: 10px;">
+          <div style="flex: 1;">
+            <label style="font-size: 11.5px; color: var(--text-muted); display: block; margin-bottom: 4px; font-weight: 600;">開始日期</label>
+            <input type="date" id="export-start-date" class="form-input" style="padding: 6px 10px; font-size: 12.5px;">
+          </div>
+          <span style="margin-top: 18px; color: var(--text-muted); font-size: 13px;">至</span>
+          <div style="flex: 1;">
+            <label style="font-size: 11.5px; color: var(--text-muted); display: block; margin-bottom: 4px; font-weight: 600;">結束日期</label>
+            <input type="date" id="export-end-date" class="form-input" style="padding: 6px 10px; font-size: 12.5px;">
+          </div>
+        </div>
+      </div>
+
+      <div style="font-size: 11.5px; color: var(--text-muted); background: var(--bg-secondary); padding: 8px 12px; border-radius: 6px; margin-bottom: 18px; line-height: 1.5;">
+        💡 提示：若同日有多筆工作，每日覆盤（肯定、感謝、學習反省）僅會在該日首列呈現一次，版面整齊不重複。
+      </div>
+
+      <div style="display: flex; justify-content: flex-end; gap: 10px;">
+        <button type="button" style="padding: 7px 16px; border: 1px solid var(--border-color); background: transparent; border-radius: 6px; cursor: pointer; font-size: 12.5px; color: var(--text-secondary);" onclick="closeExportExcelModal()">
+          取消
+        </button>
+        <button type="button" class="btn-login" id="btn-confirm-export-excel" style="padding: 7px 22px; width: auto; font-size: 12.5px;">
+          <span>📥 開始匯出 Excel</span>
+        </button>
+      </div>
     </div>
   </div>
 </div>
@@ -568,6 +654,6 @@ window.closeCloudSyncModalDirect = closeCloudSyncModalDirect;
 <script src="https://www.gstatic.com/firebasejs/10.8.0/firebase-firestore-compat.js"></script>
 
 <!-- App script with cache buster -->
-<script src="js/app.js?v=20261108_cloud_builtin"></script>
+<script src="js/app.js?v=20261108_search_under"></script>
 </body>
 </html>
